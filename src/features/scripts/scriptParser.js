@@ -8,97 +8,636 @@ export const DEFAULT_SPEAKER_COLORS = [
   '#22D3EE',
 ]
 
-const colonSpeakerPattern = /^([A-Z][A-Z0-9 ._'&-]{0,31}):\s*(.*)$/
-const standaloneSpeakerPattern = /^[A-Z][A-Z0-9 ._'&-]{0,31}$/
+const colonLabelPattern = /^([A-Za-z][A-Za-z0-9 ._'&-]{0,39}):\s*(.*)$/
+const standaloneLabelPattern = /^[A-Za-z][A-Za-z0-9 ._'&-]{0,39}$/
+const noticePattern =
+  /^(?:content\s+(?:notice|warning)|warning|viewer\s+discretion|disclaimer|trigger\s+warning)\s*:/i
+const metadataPattern =
+  /^(?:FILE|CASE|DOCUMENT|DOC|RECORD|ID|DATE|VERSION|DRAFT|REVISION|SLUG|AUTHOR|PUBLISHED|UPDATED|ISBN|ATTENDEES?|AGENDA|ACTION\s+ITEMS?|DECISIONS?)\s*:/i
+const sceneHeadingPattern = /^(?:INT\.|EXT\.|INT\/EXT\.|I\/E\.)\s*/i
+const transitionPattern =
+  /^(?:FADE\s+(?:IN|OUT)|CUT\s+TO|DISSOLVE\s+TO|SMASH\s+CUT\s+TO|MATCH\s+CUT\s+TO|WIPE\s+TO|BACK\s+TO|END\s+CREDITS)(?::|\.)?$/i
+const displayHeadingPattern =
+  /^(?:EPISODE|TITLE|TITLE\s+CARD|SUPER|ON\s+SCREEN|CHYRON|LOWER\s+THIRD)\b/i
+const sectionHeadingPattern =
+  /^(?:SECTION|CHAPTER|ACT|PART|FIELD\s+EDITION|BEST\s+PRACTICE|POST[- ]ACTION\s+REVIEW|INTRODUCTION|CONCLUSION|OVERVIEW|SUMMARY|APPENDIX|ABSTRACT|METHODS?|METHODOLOGY|RESULTS|REFERENCES|PROFESSIONAL\s+SUMMARY|WORK\s+EXPERIENCE|EMPLOYMENT\s+EXPERIENCE|EDUCATION|SKILLS|CERTIFICATIONS|QUALIFICATIONS|PROLOGUE|EPILOGUE|DEDICATION)\b/i
+const structuralLabelPattern =
+  /^(?:FILE|CASE|DOCUMENT|DOC|RECORD|ID|DATE|VERSION|DRAFT|REVISION|SLUG|AUTHOR|PUBLISHED|UPDATED|ISBN|ATTENDEES?|AGENDA|ACTION\s+ITEMS?|DECISIONS?|EPISODE|TITLE|SECTION|CHAPTER|ACT|PART|FIELD\s+EDITION|BEST\s+PRACTICE|POST[- ]ACTION\s+REVIEW|ABSTRACT|METHODS?|METHODOLOGY|RESULTS|REFERENCES|PROFESSIONAL\s+SUMMARY|WORK\s+EXPERIENCE|EMPLOYMENT\s+EXPERIENCE|EDUCATION|SKILLS|CERTIFICATIONS|QUALIFICATIONS|PROLOGUE|EPILOGUE|DEDICATION)\b/i
+const commonRolePattern =
+  /^(?:NARRATOR|HOST|GUEST|EDITOR|INTERVIEWER|REPORTER|ANNOUNCER|MODERATOR|VOICE|V\.O\.|SPEAKER)(?:\s+\d+)?$/i
 
-function normalizeSpeaker(value) {
-  return value.replace(/\s+/g, ' ').trim()
+function collapseWhitespace(value) {
+  return String(value ?? '').replace(/\s+/g, ' ').trim()
 }
 
-function isStandaloneSpeaker(line, nextLine) {
-  if (!nextLine || line.length > 32 || !standaloneSpeakerPattern.test(line)) {
-    return false
+function titleCaseLabel(value) {
+  return value
+    .toLowerCase()
+    .split(' ')
+    .map((word) => {
+      if (word.length <= 2) return word.toUpperCase()
+      return `${word.charAt(0).toUpperCase()}${word.slice(1)}`
+    })
+    .join(' ')
+}
+
+export function normalizeSpeaker(value) {
+  const collapsed = collapseWhitespace(value).replace(/:\s*$/, '')
+  const id = collapsed.toUpperCase()
+  const label =
+    collapsed === collapsed.toUpperCase() ||
+    collapsed === collapsed.toLowerCase()
+      ? titleCaseLabel(collapsed)
+      : collapsed
+
+  return { id, label }
+}
+
+function isUppercaseLine(value) {
+  return /[A-Z]/.test(value) && value === value.toUpperCase()
+}
+
+function wordCount(value) {
+  return collapseWhitespace(value).split(' ').filter(Boolean).length
+}
+
+function previousContentIndex(lines, index) {
+  for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
+    if (lines[cursor].text) return cursor
   }
 
-  return /[A-Z]/.test(line) && !colonSpeakerPattern.test(nextLine)
+  return -1
+}
+
+function nextContentIndex(lines, index) {
+  for (let cursor = index + 1; cursor < lines.length; cursor += 1) {
+    if (lines[cursor].text) return cursor
+  }
+
+  return -1
+}
+
+function isBracketed(value) {
+  return /^\[[\s\S]+\]$/.test(value)
+}
+
+function isParenthetical(value) {
+  return /^\([\s\S]+\)$/.test(value)
+}
+
+function isDisplayLeadCue(value) {
+  return /^\[(?:TITLE\s+CARD|DOCUMENT\s+STAMP|ON\s+SCREEN|SUPER|CHYRON|LOWER\s+THIRD)\b/i.test(
+    value,
+  )
+}
+
+function isStrongNonSpeaker(value) {
+  return (
+    noticePattern.test(value) ||
+    metadataPattern.test(value) ||
+    sceneHeadingPattern.test(value) ||
+    transitionPattern.test(value) ||
+    displayHeadingPattern.test(value) ||
+    sectionHeadingPattern.test(value) ||
+    isBracketed(value)
+  )
+}
+
+function isLikelyDialogue(value) {
+  if (!value || isStrongNonSpeaker(value)) return false
+  if (isParenthetical(value)) return true
+  return /[a-z]/.test(value) || /[.!?]["']?$/.test(value)
+}
+
+function collectKnownSpeakerIds(lines) {
+  const knownIds = new Set()
+  const standaloneCounts = new Map()
+
+  lines.forEach(({ text }, index) => {
+    if (!text) return
+
+    const colonMatch = text.match(colonLabelPattern)
+    if (colonMatch && !structuralLabelPattern.test(collapseWhitespace(colonMatch[1]))) {
+      const nextIndex = nextContentIndex(lines, index)
+      const hasDialogue =
+        Boolean(colonMatch[2]) ||
+        (nextIndex >= 0 && isLikelyDialogue(lines[nextIndex].text))
+      if (hasDialogue) knownIds.add(normalizeSpeaker(colonMatch[1]).id)
+      return
+    }
+
+    if (
+      !standaloneLabelPattern.test(text) ||
+      isStrongNonSpeaker(text) ||
+      wordCount(text) > 3
+    ) {
+      return
+    }
+
+    const nextIndex = nextContentIndex(lines, index)
+    if (nextIndex < 0 || !isLikelyDialogue(lines[nextIndex].text)) return
+
+    const id = normalizeSpeaker(text).id
+    standaloneCounts.set(id, (standaloneCounts.get(id) ?? 0) + 1)
+  })
+
+  standaloneCounts.forEach((count, id) => {
+    if (count > 1) knownIds.add(id)
+  })
+
+  return knownIds
+}
+
+function detectSpeakerCue(lines, index, knownSpeakerIds) {
+  const text = lines[index].text
+  const colonMatch = text.match(colonLabelPattern)
+
+  if (colonMatch) {
+    const candidate = collapseWhitespace(colonMatch[1])
+    if (structuralLabelPattern.test(candidate)) return null
+
+    const nextIndex = nextContentIndex(lines, index)
+    const hasDialogue =
+      Boolean(colonMatch[2]) ||
+      (nextIndex >= 0 && isLikelyDialogue(lines[nextIndex].text))
+    if (!hasDialogue) return null
+
+    return {
+      dialogue: colonMatch[2].trim(),
+      speaker: normalizeSpeaker(candidate),
+    }
+  }
+
+  if (
+    !standaloneLabelPattern.test(text) ||
+    isStrongNonSpeaker(text) ||
+    wordCount(text) > 3
+  ) {
+    return null
+  }
+
+  const speaker = normalizeSpeaker(text)
+  const nextIndex = nextContentIndex(lines, index)
+  if (nextIndex < 0) return null
+
+  const nextText = lines[nextIndex].text
+  const nextUppercase = isUppercaseLine(nextText) && !isParenthetical(nextText)
+  if (nextUppercase || !isLikelyDialogue(nextText)) return null
+
+  const isUppercaseCue = isUppercaseLine(text)
+  const isKnownCue = knownSpeakerIds.has(speaker.id)
+  const isCommonRole = commonRolePattern.test(text)
+  const hasParenthetical = isParenthetical(nextText)
+
+  if (!isUppercaseCue && !isKnownCue && !isCommonRole) return null
+  if (wordCount(text) === 3 && !isKnownCue && !hasParenthetical) return null
+
+  return { dialogue: '', speaker }
+}
+
+function classifyBracketedCue(text) {
+  const cue = text.slice(1, -1).trim()
+
+  if (/^(?:pause|beat|silence|hold)(?:\.|\s|$)/i.test(cue)) {
+    return { subtype: 'pause', type: 'pause' }
+  }
+
+  if (/^(?:ON\s+SCREEN|SUPER|CHYRON|LOWER\s+THIRD)\s*:/i.test(cue)) {
+    return { subtype: 'display-cue', type: 'display' }
+  }
+
+  if (/\b(?:music|sound|sfx|audio|theme|sting|voice-over)\b/i.test(cue)) {
+    return { subtype: 'audio', type: 'direction' }
+  }
+
+  if (
+    /\b(?:screen|camera|fade|cut|lights?|cabinet|door|title\s+card|document\s+stamp)\b/i.test(
+      cue,
+    )
+  ) {
+    return {
+      subtype: isDisplayLeadCue(text) ? 'display-cue' : 'visual',
+      type: 'direction',
+    }
+  }
+
+  return { subtype: 'direction', type: 'direction' }
+}
+
+function classifyUppercaseBlock(lines, index) {
+  const text = lines[index].text
+  const previousIndex = previousContentIndex(lines, index)
+  const nextIndex = nextContentIndex(lines, index)
+  const previousText = previousIndex >= 0 ? lines[previousIndex].text : ''
+  const nextText = nextIndex >= 0 ? lines[nextIndex].text : ''
+
+  if (metadataPattern.test(text)) return 'metadata'
+  if (sectionHeadingPattern.test(text)) return 'section'
+  if (displayHeadingPattern.test(text) || isDisplayLeadCue(previousText)) {
+    return 'display'
+  }
+
+  const adjacentUppercase =
+    isUppercaseLine(previousText) || isUppercaseLine(nextText)
+  return adjacentUppercase || index < 8 ? 'display' : 'section'
+}
+
+function createBlock(blocks, type, text, metadata = {}) {
+  blocks.push({
+    id: `${blocks.length + 1}-${type}`,
+    text,
+    type,
+    ...metadata,
+  })
 }
 
 export function parseScript(rawScript) {
   const lines = String(rawScript ?? '')
     .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-
-  const segments = []
-  let currentSpeaker = 'Narrator'
-  let currentText = []
+    .map((raw) => ({ raw, text: raw.trim() }))
+  const knownSpeakerIds = collectKnownSpeakerIds(lines)
+  const blocks = []
+  const speakerLabels = new Map()
   const speakerOrder = new Map()
+  let currentSpeaker = normalizeSpeaker('Narrator')
+  let currentText = []
 
-  const colorFor = (speaker) => {
-    if (!speakerOrder.has(speaker)) {
-      speakerOrder.set(speaker, speakerOrder.size)
+  const rememberSpeaker = (speaker) => {
+    if (!speakerLabels.has(speaker.id)) {
+      speakerLabels.set(speaker.id, speaker.label)
+    }
+
+    return { id: speaker.id, label: speakerLabels.get(speaker.id) }
+  }
+
+  const colorFor = (speakerId) => {
+    if (!speakerOrder.has(speakerId)) {
+      speakerOrder.set(speakerId, speakerOrder.size)
     }
 
     return DEFAULT_SPEAKER_COLORS[
-      speakerOrder.get(speaker) % DEFAULT_SPEAKER_COLORS.length
+      speakerOrder.get(speakerId) % DEFAULT_SPEAKER_COLORS.length
     ]
   }
 
-  const flush = () => {
-    if (!currentText.length) {
-      return
-    }
+  const flushDialogue = () => {
+    if (!currentText.length) return
 
-    segments.push({
-      id: `${segments.length + 1}-${currentSpeaker.toLowerCase()}`,
-      speaker: currentSpeaker,
-      text: currentText.join(' '),
-      color: colorFor(currentSpeaker),
+    const speaker = rememberSpeaker(currentSpeaker)
+    createBlock(blocks, 'dialogue', currentText.join(' '), {
+      color: colorFor(speaker.id),
+      speaker: speaker.label,
+      speakerId: speaker.id,
+      speakerLabel: speaker.label,
     })
     currentText = []
   }
 
   for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index]
-    const speakerMatch = line.match(colonSpeakerPattern)
+    const { text } = lines[index]
 
-    if (speakerMatch) {
-      flush()
-      currentSpeaker = normalizeSpeaker(speakerMatch[1])
-      if (speakerMatch[2]) {
-        currentText.push(speakerMatch[2].trim())
+    if (!text) {
+      flushDialogue()
+      continue
+    }
+
+    if (noticePattern.test(text)) {
+      flushDialogue()
+      const noticeLines = [text]
+
+      while (index + 1 < lines.length && lines[index + 1].text) {
+        const nextIndex = index + 1
+        const nextText = lines[nextIndex].text
+        if (
+          isBracketed(nextText) ||
+          isUppercaseLine(nextText) ||
+          sceneHeadingPattern.test(nextText) ||
+          transitionPattern.test(nextText) ||
+          metadataPattern.test(nextText) ||
+          detectSpeakerCue(lines, nextIndex, knownSpeakerIds)
+        ) {
+          break
+        }
+
+        noticeLines.push(nextText)
+        index = nextIndex
       }
+
+      createBlock(blocks, 'notice', noticeLines.join('\n'))
       continue
     }
 
-    if (isStandaloneSpeaker(line, lines[index + 1])) {
-      flush()
-      currentSpeaker = normalizeSpeaker(line)
+    if (isBracketed(text)) {
+      flushDialogue()
+      const classification = classifyBracketedCue(text)
+      createBlock(blocks, classification.type, text, {
+        subtype: classification.subtype,
+      })
       continue
     }
 
-    currentText.push(line)
+    if (sceneHeadingPattern.test(text)) {
+      flushDialogue()
+      createBlock(blocks, 'scene', text)
+      continue
+    }
+
+    if (transitionPattern.test(text)) {
+      flushDialogue()
+      createBlock(blocks, 'transition', text)
+      continue
+    }
+
+    if (metadataPattern.test(text)) {
+      flushDialogue()
+      createBlock(blocks, 'metadata', text)
+      continue
+    }
+
+    const speakerCue = detectSpeakerCue(lines, index, knownSpeakerIds)
+    if (speakerCue) {
+      flushDialogue()
+      currentSpeaker = rememberSpeaker(speakerCue.speaker)
+      if (speakerCue.dialogue) currentText.push(speakerCue.dialogue)
+      continue
+    }
+
+    if (isParenthetical(text)) {
+      flushDialogue()
+      createBlock(blocks, 'direction', text, { subtype: 'parenthetical' })
+      continue
+    }
+
+    if (isUppercaseLine(text)) {
+      flushDialogue()
+      createBlock(blocks, classifyUppercaseBlock(lines, index), text)
+      continue
+    }
+
+    currentText.push(text)
   }
 
-  flush()
-
-  return segments
+  flushDialogue()
+  return blocks
 }
 
-export function getSpeakers(segments) {
+export function getSpeakers(blocks) {
   const speakers = new Map()
 
-  segments.forEach(({ color, speaker }) => {
-    if (!speakers.has(speaker)) {
-      speakers.set(speaker, { color, name: speaker })
-    }
+  blocks.forEach((block) => {
+    if (block.type && block.type !== 'dialogue') return
+
+    const normalized = normalizeSpeaker(block.speakerId ?? block.speaker)
+    if (!normalized.id || speakers.has(normalized.id)) return
+
+    speakers.set(normalized.id, {
+      color: block.color,
+      id: normalized.id,
+      label: block.speakerLabel ?? normalized.label,
+      name: block.speakerLabel ?? normalized.label,
+    })
   })
 
   return Array.from(speakers.values())
 }
 
-export function countWords(segments) {
-  return segments.reduce((total, segment) => {
-    return total + segment.text.split(/\s+/).filter(Boolean).length
+export function countWords(blocks) {
+  return blocks.reduce((total, block) => {
+    if (block.type && block.type !== 'dialogue') return total
+    return total + block.text.split(/\s+/).filter(Boolean).length
   }, 0)
+}
+
+function countMatchingPatterns(text, patterns) {
+  return patterns.reduce(
+    (count, pattern) => count + (pattern.test(text) ? 1 : 0),
+    0,
+  )
+}
+
+function detectDocumentType(blocks, spokenWords, rawScript) {
+  const text = rawScript
+    ? String(rawScript)
+    : blocks
+        .map((block) =>
+          block.type === 'dialogue' && block.speakerId !== 'NARRATOR'
+            ? `${block.speakerId}: ${block.text}`
+            : block.text,
+        )
+        .join('\n')
+  const resumeSections = countMatchingPatterns(text, [
+    /(?:^|\n)\s*(?:professional\s+summary|profile|objective)\s*(?:\n|$)/im,
+    /(?:^|\n)\s*(?:work|employment)\s+experience\s*(?:\n|$)/im,
+    /(?:^|\n)\s*education\s*(?:\n|$)/im,
+    /(?:^|\n)\s*(?:skills|certifications|qualifications)\s*(?:\n|$)/im,
+  ])
+  const hasContactDetails =
+    /\b[\w.+-]+@[\w.-]+\.[a-z]{2,}\b/i.test(text) ||
+    /\b(?:linkedin\.com|github\.com|portfolio)\b/i.test(text)
+
+  if (resumeSections >= 3 || (resumeSections >= 2 && hasContactDetails)) {
+    return 'Resume'
+  }
+
+  const researchSignals = countMatchingPatterns(text, [
+    /(?:^|\n)\s*abstract\s*(?:\n|$)/im,
+    /(?:^|\n)\s*(?:methodology|methods)\s*(?:\n|$)/im,
+    /(?:^|\n)\s*results\s*(?:\n|$)/im,
+    /(?:^|\n)\s*references\s*(?:\n|$)/im,
+    /\bdoi:\s*10\./i,
+  ])
+  if (researchSignals >= 2) return 'Research paper'
+
+  const meetingSignals = countMatchingPatterns(text, [
+    /\bmeeting\s+(?:notes|minutes)\b/i,
+    /(?:^|\n)\s*attendees?\s*:/im,
+    /(?:^|\n)\s*agenda\s*:/im,
+    /(?:^|\n)\s*action\s+items?\s*:/im,
+    /(?:^|\n)\s*decisions?\s*:/im,
+  ])
+  if (meetingSignals >= 2) return 'Meeting notes'
+
+  const manualSignals = countMatchingPatterns(text, [
+    /\b(?:user|instruction|service|operations?)\s+manual\b/i,
+    /(?:^|\n)\s*(?:installation|setup)\s*(?:\n|$)/im,
+    /(?:^|\n)\s*troubleshooting\s*(?:\n|$)/im,
+    /(?:^|\n)\s*safety\s+(?:instructions|information)\s*(?:\n|$)/im,
+  ])
+  if (manualSignals >= 2) return 'Manual'
+
+  const bookSignals = countMatchingPatterns(text, [
+    /(?:^|\n)\s*chapter\s+(?:\d+|[ivxlcdm]+|one|two|three|four|five)\b/im,
+    /\bISBN(?:-1[03])?\s*:/i,
+    /\bcopyright\s+(?:©|\(c\)|\d{4})/i,
+    /(?:^|\n)\s*(?:prologue|epilogue|dedication)\s*(?:\n|$)/im,
+  ])
+  if (bookSignals >= 2 || (bookSignals >= 1 && spokenWords >= 300)) {
+    return 'Book'
+  }
+
+  const articleSignals = countMatchingPatterns(text, [
+    /(?:^|\n)[ \t]*by\s+[A-Z][A-Za-z .'-]{2,60}[ \t]*(?:\n|$)/im,
+    /(?:^|\n)\s*(?:published|updated)\s*:/im,
+    /(?:^|\n)\s*(?:news|feature|opinion)\s+article\s*(?:\n|$)/im,
+  ])
+  if (articleSignals >= 2) return 'Article'
+
+  return null
+}
+
+function detectProductionFormat(counts, speakers) {
+  const structuralCount =
+    counts.direction +
+    counts.display +
+    counts.notice +
+    counts.pause +
+    counts.section
+  const hasCast = speakers.length >= 2
+  const strongMatches = []
+  const partialMatches = []
+
+  if (counts.scene >= 2 || (counts.scene >= 1 && counts.transition >= 1)) {
+    strongMatches.push('Screenplay')
+  } else if (counts.scene || counts.transition) {
+    partialMatches.push('Screenplay')
+  }
+
+  if (
+    hasCast &&
+    counts.dialogue >= 2 &&
+    counts.display + counts.section >= 1 &&
+    structuralCount >= 3
+  ) {
+    strongMatches.push('Documentary')
+  } else if (hasCast && counts.display + counts.section >= 1) {
+    partialMatches.push('Documentary')
+  }
+
+  if (hasCast && counts.dialogue >= 2 && structuralCount === 0) {
+    strongMatches.push('Podcast')
+  } else if (hasCast && structuralCount <= 1) {
+    partialMatches.push('Podcast')
+  }
+
+  if (
+    hasCast &&
+    counts.dialogue >= 2 &&
+    counts.direction + counts.pause >= 1 &&
+    !counts.scene &&
+    !counts.display
+  ) {
+    strongMatches.push('Stage play')
+  } else if (hasCast && counts.direction + counts.pause >= 1) {
+    partialMatches.push('Stage play')
+  }
+
+  if (
+    speakers.length <= 1 &&
+    counts.dialogue >= 1 &&
+    counts.display >= 2
+  ) {
+    strongMatches.push('Presentation')
+  } else if (
+    speakers.length <= 1 &&
+    counts.dialogue >= 1 &&
+    counts.display + counts.section >= 1
+  ) {
+    partialMatches.push('Presentation')
+  }
+
+  if (strongMatches.length === 1) {
+    return { confidence: 'High', scriptType: strongMatches[0] }
+  }
+
+  if (strongMatches.length === 0 && partialMatches.length === 1) {
+    return { confidence: 'Medium', scriptType: partialMatches[0] }
+  }
+
+  return { confidence: 'Low', scriptType: 'Generic Teleprompter' }
+}
+
+export function analyzeScript(blocks, rawScript = '') {
+  const speakers = getSpeakers(blocks)
+  const counts = blocks.reduce(
+    (totals, block) => {
+      if (block.type in totals) totals[block.type] += 1
+      return totals
+    },
+    {
+      dialogue: 0,
+      direction: 0,
+      display: 0,
+      metadata: 0,
+      notice: 0,
+      pause: 0,
+      scene: 0,
+      section: 0,
+      transition: 0,
+    },
+  )
+  const spokenWords = countWords(blocks)
+  const documentType = detectDocumentType(blocks, spokenWords, rawScript)
+  const detection = documentType
+    ? { confidence: 'Low', scriptType: 'Generic Teleprompter' }
+    : detectProductionFormat(counts, speakers)
+
+  return {
+    ...counts,
+    confidence: detection.confidence,
+    documentType,
+    direction: counts.direction + counts.pause,
+    displayAndSection: counts.display + counts.section,
+    estimatedMinutes: spokenWords
+      ? Math.max(1, Math.round(spokenWords / 140))
+      : 0,
+    scriptType: detection.scriptType,
+    speakerCount: speakers.length,
+    wordCount: spokenWords,
+  }
+}
+
+export function normalizeSpeakerColors(savedColors = {}, speakers = []) {
+  const speakerDefaults = new Map(
+    speakers.map((speaker) => [speaker.id, speaker.color]),
+  )
+  const grouped = new Map()
+
+  Object.entries(savedColors).forEach(([key, color]) => {
+    if (typeof color !== 'string' || !color.trim()) return
+    const speaker = normalizeSpeaker(key)
+    if (!speaker.id) return
+    if (!grouped.has(speaker.id)) grouped.set(speaker.id, [])
+    grouped.get(speaker.id).push({
+      color,
+      isCanonicalKey: collapseWhitespace(key).replace(/:\s*$/, '') === speaker.id,
+    })
+  })
+
+  const normalizedColors = {}
+  grouped.forEach((candidates, speakerId) => {
+    const defaultColor = speakerDefaults.get(speakerId)?.toLowerCase()
+    const customCandidates = defaultColor
+      ? candidates.filter(({ color }) => color.toLowerCase() !== defaultColor)
+      : []
+    const preferred =
+      customCandidates.find(({ isCanonicalKey }) => isCanonicalKey) ??
+      customCandidates[0] ??
+      candidates.find(({ isCanonicalKey }) => isCanonicalKey) ??
+      candidates[0]
+
+    normalizedColors[speakerId] = preferred.color
+  })
+
+  return normalizedColors
+}
+
+export function speakerColorsAreEqual(left = {}, right = {}) {
+  const leftKeys = Object.keys(left).sort()
+  const rightKeys = Object.keys(right).sort()
+  return (
+    leftKeys.length === rightKeys.length &&
+    leftKeys.every(
+      (key, index) => key === rightKeys[index] && left[key] === right[key],
+    )
+  )
 }

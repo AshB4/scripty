@@ -1,8 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useKeyboardControls } from '../../hooks/useKeyboardControls.js'
 
-export function useTeleprompter({ countdownEnabled = false, speed = 70 } = {}) {
-  const viewportRef = useRef(null)
+export function useTeleprompter({
+  countdownEnabled = false,
+  onAutoScrollStart,
+  speed = 70,
+  viewportRef: providedViewportRef,
+} = {}) {
+  const internalViewportRef = useRef(null)
+  const viewportRef = providedViewportRef ?? internalViewportRef
   const animationRef = useRef(null)
   const countdownTimerRef = useRef(null)
   const previousTimeRef = useRef(null)
@@ -44,7 +50,7 @@ export function useTeleprompter({ countdownEnabled = false, speed = 70 } = {}) {
 
     animationRef.current = window.requestAnimationFrame(scrollStep)
     return () => window.cancelAnimationFrame(animationRef.current)
-  }, [isPlaying, speed])
+  }, [isPlaying, speed, viewportRef])
 
   useEffect(
     () => () => {
@@ -59,34 +65,41 @@ export function useTeleprompter({ countdownEnabled = false, speed = 70 } = {}) {
     setIsPlaying(false)
   }, [cancelCountdown])
 
-  const play = useCallback((withCountdown = false) => {
-    cancelCountdown()
+  const play = useCallback(
+    (withCountdown = false) => {
+      cancelCountdown()
+      onAutoScrollStart?.()
 
-    if (!withCountdown) {
-      setIsPlaying(true)
-      return
-    }
-
-    let remaining = 3
-    setCountdownValue(remaining)
-    countdownTimerRef.current = window.setInterval(() => {
-      remaining -= 1
-
-      if (remaining === 0) {
-        window.clearInterval(countdownTimerRef.current)
-        countdownTimerRef.current = null
-        setCountdownValue(null)
+      if (!withCountdown) {
         setIsPlaying(true)
         return
       }
 
+      let remaining = 3
       setCountdownValue(remaining)
-    }, 1000)
-  }, [cancelCountdown])
+      countdownTimerRef.current = window.setInterval(() => {
+        remaining -= 1
 
-  const scrollBy = useCallback((distance) => {
-    viewportRef.current?.scrollBy({ behavior: 'smooth', top: distance })
-  }, [])
+        if (remaining === 0) {
+          window.clearInterval(countdownTimerRef.current)
+          countdownTimerRef.current = null
+          setCountdownValue(null)
+          setIsPlaying(true)
+          return
+        }
+
+        setCountdownValue(remaining)
+      }, 1000)
+    },
+    [cancelCountdown, onAutoScrollStart],
+  )
+
+  const scrollBy = useCallback(
+    (distance) => {
+      viewportRef.current?.scrollBy({ behavior: 'smooth', top: distance })
+    },
+    [viewportRef],
+  )
 
   const toggleFullscreen = useCallback(async () => {
     try {
@@ -128,6 +141,7 @@ export function useTeleprompter({ countdownEnabled = false, speed = 70 } = {}) {
       play,
       scrollBy,
       toggleFullscreen,
+      viewportRef,
     ],
   )
 

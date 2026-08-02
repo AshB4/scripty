@@ -9,6 +9,9 @@ export default function SpeakerSettings({
   speakers = [],
 }) {
   const update = (key, value) => onChange({ ...settings, [key]: value })
+  const updateSpeakerColor = (speaker, color) => {
+    onSpeakerColorChange?.(speaker, color)
+  }
 
   return (
     <section className="settings-panel" aria-label="Teleprompter settings">
@@ -78,26 +81,29 @@ export default function SpeakerSettings({
       {speakers.length ? (
         <div className="speaker-colors">
           <div className="section-label">
-            <strong>Speaker colors</strong>
+            <strong>Cast</strong>
             <span>Names and markers only</span>
           </div>
           {speakers.map((speaker) => (
-            <label className="speaker-color" key={speaker.name}>
+            <label className="speaker-color" key={speaker.id}>
               <span
                 aria-hidden="true"
                 className="speaker-color__swatch"
                 style={{
-                  backgroundColor: speakerColors[speaker.name] ?? speaker.color,
+                  backgroundColor: speakerColors[speaker.id] ?? speaker.color,
                 }}
               />
-              <span>{speaker.name}</span>
+              <span>{speaker.label}</span>
               <input
-                aria-label={`${speaker.name} color`}
+                aria-label={`${speaker.label} color`}
                 onChange={(event) =>
-                  onSpeakerColorChange?.(speaker.name, event.target.value)
+                  updateSpeakerColor(speaker.id, event.target.value)
+                }
+                onInput={(event) =>
+                  updateSpeakerColor(speaker.id, event.target.value)
                 }
                 type="color"
-                value={speakerColors[speaker.name] ?? speaker.color}
+                value={speakerColors[speaker.id] ?? speaker.color}
               />
             </label>
           ))}

@@ -2,36 +2,57 @@ import { useCallback } from 'react'
 import { useDropzone } from 'react-dropzone'
 import { FileUp } from 'lucide-react'
 
-export default function ScriptDropzone({ onTextLoaded }) {
+const acceptedFiles = {
+  'application/octet-stream': ['.docx', '.txt'],
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': [
+    '.docx',
+  ],
+  'text/plain': ['.txt'],
+}
+
+export default function ScriptDropzone({ disabled = false, onFileSelected }) {
   const onDrop = useCallback(
-    async (acceptedFiles) => {
-      const [file] = acceptedFiles
+    (files, rejections) => {
+      const file = files[0] ?? rejections[0]?.file
       if (!file) {
         return
       }
 
-      onTextLoaded(await file.text())
+      onFileSelected(file)
     },
-    [onTextLoaded],
+    [onFileSelected],
   )
 
   const { getInputProps, getRootProps, isDragActive } = useDropzone({
-    accept: {
-      'text/plain': ['.txt'],
-    },
+    accept: acceptedFiles,
+    disabled,
     multiple: false,
     onDrop,
   })
 
   return (
-    <div
-      {...getRootProps({
-        className: `dropzone ${isDragActive ? 'dropzone--active' : ''}`,
-      })}
-    >
-      <input {...getInputProps()} />
-      <FileUp aria-hidden="true" size={22} />
-      <span>{isDragActive ? 'Drop your script' : 'Import .txt'}</span>
+    <div className="script-import">
+      <div
+        {...getRootProps({
+          'aria-disabled': disabled,
+          className: `dropzone ${isDragActive ? 'dropzone--active' : ''}`,
+        })}
+      >
+        <input
+          {...getInputProps({
+            accept: '.docx,.txt',
+            onClick: (event) => {
+              event.currentTarget.value = ''
+            },
+          })}
+        />
+        <FileUp aria-hidden="true" size={22} />
+        <span>{isDragActive ? 'Drop your script' : 'Import Script'}</span>
+      </div>
+      <p className="script-import__support">
+        <strong>Supports DOCX and TXT</strong>
+        <span>Files are processed locally in your browser.</span>
+      </p>
     </div>
   )
 }

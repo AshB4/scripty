@@ -8,12 +8,13 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "node --test src/features/scripts/scriptParser.test.js"
+    "test": "node --test src/features/scripts/scriptImport.test.js src/features/scripts/scriptParser.test.js src/features/teleprompter/voiceFollowMatcher.test.js"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",
     "clsx": "^2.1.1",
     "lucide-react": "^1.28.0",
+    "mammoth": "^1.12.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-dropzone": "^19.2.0",

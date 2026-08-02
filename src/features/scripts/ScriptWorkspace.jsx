@@ -1,13 +1,22 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Maximize2, Play, Trash2, WandSparkles } from 'lucide-react'
+import { FileUp, Maximize2, Mic2, Play, Trash2 } from 'lucide-react'
 import Button from '../../components/Button.jsx'
 import Modal from '../../components/Modal.jsx'
 import { useLocalStorage } from '../../hooks/useLocalStorage.js'
 import ScriptDropzone from './ScriptDropzone.jsx'
+import ParsedScriptPreview from './ParsedScriptPreview.jsx'
+import ScriptAnalysis from './ScriptAnalysis.jsx'
 import ScriptInput from './ScriptInput.jsx'
+import { importScriptFile } from './scriptImport.js'
 import SpeakerSettings from './SpeakerSettings.jsx'
-import { countWords, getSpeakers, parseScript } from './scriptParser.js'
+import {
+  analyzeScript,
+  getSpeakers,
+  normalizeSpeakerColors,
+  parseScript,
+  speakerColorsAreEqual,
+} from './scriptParser.js'
 import { DEFAULT_SETTINGS, resolveSettings } from './scriptSettings.js'
 
 const sampleScript = `HOST: Open with the main promise and look into the lens.
@@ -26,12 +35,34 @@ export default function ScriptWorkspace() {
     'scripty.speakerColors',
     {},
   )
+  const [scriptTypeOverride, setScriptTypeOverride] = useLocalStorage(
+    'scripty.scriptTypeOverride',
+    'Auto',
+  )
   const [isClearOpen, setIsClearOpen] = useState(false)
+  const [pendingImport, setPendingImport] = useState(null)
+  const [importFeedback, setImportFeedback] = useState({
+    message: '',
+    status: 'idle',
+  })
+  const importRequestId = useRef(0)
   const settings = resolveSettings(storedSettings)
-  const segments = parseScript(script)
-  const speakers = getSpeakers(segments)
-  const wordCount = countWords(segments)
-  const minutes = wordCount ? Math.max(1, Math.round(wordCount / 140)) : 0
+  const segments = useMemo(() => parseScript(script), [script])
+  const speakers = useMemo(() => getSpeakers(segments), [segments])
+  const analysis = useMemo(
+    () => analyzeScript(segments, script),
+    [script, segments],
+  )
+  const normalizedSpeakerColors = useMemo(
+    () => normalizeSpeakerColors(speakerColors, speakers),
+    [speakerColors, speakers],
+  )
+
+  useEffect(() => {
+    if (!speakerColorsAreEqual(speakerColors, normalizedSpeakerColors)) {
+      setSpeakerColors(normalizedSpeakerColors)
+    }
+  }, [normalizedSpeakerColors, setSpeakerColors, speakerColors])
 
   const changeSpeakerColor = (speaker, color) => {
     setSpeakerColors((current) => ({ ...current, [speaker]: color }))
@@ -53,7 +84,51 @@ export default function ScriptWorkspace() {
   const clearScript = () => {
     setScript('')
     setSpeakerColors({})
+    setScriptTypeOverride('Auto')
     setIsClearOpen(false)
+  }
+
+  const finishImport = (text, fileName) => {
+    setScript(text)
+    setScriptTypeOverride('Auto')
+    setPendingImport(null)
+    setImportFeedback({
+      message: `${fileName} imported successfully.`,
+      status: 'success',
+    })
+  }
+
+  const handleFileSelected = async (file) => {
+    const requestId = importRequestId.current + 1
+    importRequestId.current = requestId
+    setImportFeedback({ message: 'Importing script...', status: 'importing' })
+
+    try {
+      const text = await importScriptFile(file)
+      if (requestId !== importRequestId.current) {
+        return
+      }
+
+      if (script.trim()) {
+        setPendingImport({ fileName: file.name, text })
+        setImportFeedback({ message: '', status: 'idle' })
+        return
+      }
+
+      finishImport(text, file.name)
+    } catch (error) {
+      if (requestId !== importRequestId.current) {
+        return
+      }
+
+      setImportFeedback({
+        message:
+          error instanceof Error
+            ? error.message
+            : 'This file could not be imported.',
+        status: 'error',
+      })
+    }
   }
 
   return (
@@ -90,12 +165,16 @@ export default function ScriptWorkspace() {
         <div className="workspace__main">
           <div className="panel-heading">
             <div>
-              <p className="eyebrow">Script workspace</p>
-              <h1>Prepare your script</h1>
+              <h1>Script Workspace</h1>
+              <p className="panel-subtitle">Prepare your script</p>
             </div>
             <div className="script-actions">
-              <ScriptDropzone onTextLoaded={setScript} />
+              <ScriptDropzone
+                disabled={importFeedback.status === 'importing'}
+                onFileSelected={handleFileSelected}
+              />
               <Button
+                className="script-action-button"
                 icon={Trash2}
                 onClick={() => setIsClearOpen(true)}
                 variant="ghost"
@@ -104,40 +183,60 @@ export default function ScriptWorkspace() {
               </Button>
             </div>
           </div>
-          <ScriptInput onChange={setScript} value={script} />
+          {importFeedback.message ? (
+            <p
+              aria-live="polite"
+              className={`script-import-feedback script-import-feedback--${importFeedback.status}`}
+              role={importFeedback.status === 'error' ? 'alert' : 'status'}
+            >
+              {importFeedback.message}
+            </p>
+          ) : null}
+          <ScriptInput
+            onChange={setScript}
+            onFileSelected={handleFileSelected}
+            value={script}
+          />
         </div>
 
         <aside className="workspace__aside">
-          <section className="summary-panel">
-            <WandSparkles aria-hidden="true" size={21} />
-            <div>
-              <strong>{segments.length} segments</strong>
-              <span>
-                {wordCount} words · about {minutes} min
+          <ScriptAnalysis
+            analysis={analysis}
+            onTypeOverrideChange={setScriptTypeOverride}
+            typeOverride={scriptTypeOverride}
+          />
+          <section
+            aria-label="Voice Follow browser beta"
+            className="voice-follow-card"
+          >
+            <div className="voice-follow-card__header">
+              <span className="voice-follow-card__icon">
+                <Mic2 aria-hidden="true" size={18} />
+              </span>
+              <span className="coming-soon voice-follow-card__badge">
+                Beta
               </span>
             </div>
+            <h2>Voice Follow</h2>
+            <p>
+              Your teleprompter follows your voice instead of forcing you to
+              follow it.
+            </p>
+            <span className="voice-follow-card__status">
+              Available in Chrome
+            </span>
           </section>
           <SpeakerSettings
             onChange={setSettings}
             onSpeakerColorChange={changeSpeakerColor}
             settings={settings}
-            speakerColors={speakerColors}
+            speakerColors={normalizedSpeakerColors}
             speakers={speakers}
           />
-          <section className="segment-list" aria-label="Parsed script">
-            {segments.map((segment) => (
-              <article
-                key={segment.id}
-                style={{
-                  '--speaker-color':
-                    speakerColors[segment.speaker] ?? segment.color,
-                }}
-              >
-                <span>{segment.speaker}</span>
-                <p>{segment.text}</p>
-              </article>
-            ))}
-          </section>
+          <ParsedScriptPreview
+            blocks={segments}
+            speakerColors={normalizedSpeakerColors}
+          />
         </aside>
       </section>
 
@@ -155,6 +254,32 @@ export default function ScriptWorkspace() {
           </Button>
           <Button icon={Trash2} onClick={clearScript} variant="danger">
             Clear script
+          </Button>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={Boolean(pendingImport)}
+        onClose={() => setPendingImport(null)}
+        title="Replace current script?"
+      >
+        <p className="modal-copy">
+          Importing {pendingImport?.fileName} will replace the script currently
+          saved in this browser.
+        </p>
+        <div className="modal-actions">
+          <Button onClick={() => setPendingImport(null)} variant="secondary">
+            Keep script
+          </Button>
+          <Button
+            icon={FileUp}
+            onClick={() => {
+              if (pendingImport) {
+                finishImport(pendingImport.text, pendingImport.fileName)
+              }
+            }}
+          >
+            Replace script
           </Button>
         </div>
       </Modal>
