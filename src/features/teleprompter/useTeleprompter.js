@@ -4,6 +4,7 @@ import {
   advanceTimedViewport,
   MANUAL_SCROLL_DISTANCE,
   moveViewport,
+  scrollViewportToTop,
 } from './teleprompterNavigation.js'
 
 export function useTeleprompter({
@@ -123,10 +124,7 @@ export function useTeleprompter({
   const controls = useMemo(
     () => ({
       forward: () => scrollBy(MANUAL_SCROLL_DISTANCE),
-      jumpToStart: () => {
-        const viewport = viewportRef.current
-        if (viewport) viewport.scrollTop = 0
-      },
+      jumpToStart: () => scrollViewportToTop(viewportRef.current),
       pause,
       play,
       rewind: () => scrollBy(-MANUAL_SCROLL_DISTANCE),

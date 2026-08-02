@@ -9,8 +9,14 @@ import {
   resolveVoiceMatchState,
 } from './voiceFollowState.js'
 import {
+  createCleanBlockTrackingState,
+  EMPTY_PENDING_MATCH,
+  isBlockProgressComplete,
+} from './voiceFollowTracking.js'
+import {
   getDiagnosticTime,
   logVoiceFollowDiagnostic,
+  voiceFollowDiagnosticsEnabled,
 } from './voiceFollowDiagnostics.js'
 import {
   clearRecognitionTranscript,
@@ -40,14 +46,18 @@ export function useVoiceFollow({ blocks, onPositionChange }) {
   const [currentTranscriptWords, setCurrentTranscriptWords] = useState([])
   const [matchedWordCount, setMatchedWordCount] = useState(0)
   const [wordProgressTiming, setWordProgressTiming] = useState(null)
+  const [diagnosticEvents, setDiagnosticEvents] = useState([])
+  const diagnosticsEnabled = voiceFollowDiagnosticsEnabled()
   const blocksRef = useRef(blocks)
   const currentBlockIndexRef = useRef(0)
   const enabledRef = useRef(false)
+  const eventNumberRef = useRef(0)
   const recognitionRef = useRef(null)
   const recognitionSessionRef = useRef(createRecognitionSessionState())
   const restartTimerRef = useRef(null)
+  const recognitionSessionIdRef = useRef(0)
   const waitingTimerRef = useRef(null)
-  const pendingMatchRef = useRef({ count: 0, index: null })
+  const pendingMatchRef = useRef({ ...EMPTY_PENDING_MATCH })
   const lowConfidenceCountRef = useRef(0)
   const lastSpeechAtRef = useRef(null)
   const lastMovementRef = useRef(null)
@@ -70,11 +80,22 @@ export function useVoiceFollow({ blocks, onPositionChange }) {
     setStatus(nextStatus)
   }, [])
 
+  const recordDiagnosticEvent = useCallback(
+    (event) => {
+      if (!diagnosticsEnabled) return
+      setDiagnosticEvents((current) => [...current.slice(-19), event])
+    },
+    [diagnosticsEnabled],
+  )
+
   const resetWordProgress = useCallback(
-    (blockIndex = currentBlockIndexRef.current, clearRecognitionBuffer = true) => {
+    (
+      blockIndex = currentBlockIndexRef.current,
+      { clearRecognitionBuffer = true, transcriptWords = [] } = {},
+    ) => {
       progressBlockIndexRef.current = blockIndex
       matchedWordCountRef.current = 0
-      setCurrentTranscriptWords([])
+      setCurrentTranscriptWords(transcriptWords)
       setMatchedWordCount(0)
       setWordProgressTiming(null)
       if (clearRecognitionBuffer) {
@@ -86,6 +107,25 @@ export function useVoiceFollow({ blocks, onPositionChange }) {
     [],
   )
 
+  const resetBlockTracking = useCallback(
+    (
+      blockIndex = currentBlockIndexRef.current,
+      { eventWords = [], nextBlockWords = [] } = {},
+    ) => {
+      const cleanState = createCleanBlockTrackingState({
+        eventWords,
+        nextBlockWords,
+      })
+      pendingMatchRef.current = cleanState.pendingMatch
+      lowConfidenceCountRef.current = cleanState.lowConfidenceCount
+      resetWordProgress(blockIndex, {
+        transcriptWords: cleanState.carryoverWords,
+      })
+      return cleanState
+    },
+    [resetWordProgress],
+  )
+
   useEffect(() => {
     blocksRef.current = blocks
     const safeIndex = Math.min(
@@ -93,12 +133,10 @@ export function useVoiceFollow({ blocks, onPositionChange }) {
       currentBlockIndexRef.current,
     )
     currentBlockIndexRef.current = safeIndex
-    pendingMatchRef.current = { count: 0, index: null }
-    lowConfidenceCountRef.current = 0
     lastMovementRef.current = null
     setCurrentBlockIndexState(safeIndex)
-    resetWordProgress(safeIndex)
-  }, [blocks, resetWordProgress])
+    resetBlockTracking(safeIndex)
+  }, [blocks, resetBlockTracking])
 
   useEffect(() => {
     onPositionChangeRef.current = onPositionChange
@@ -117,11 +155,9 @@ export function useVoiceFollow({ blocks, onPositionChange }) {
       source: 'manual',
       toIndex: safeIndex,
     }
-    pendingMatchRef.current = { count: 0, index: null }
-    lowConfidenceCountRef.current = 0
-    resetWordProgress(safeIndex)
+    resetBlockTracking(safeIndex)
     setCurrentBlockIndexState(safeIndex)
-  }, [resetWordProgress])
+  }, [resetBlockTracking])
 
   const scheduleWaitingStatus = useCallback(() => {
     window.clearTimeout(waitingTimerRef.current)
@@ -172,8 +208,17 @@ export function useVoiceFollow({ blocks, onPositionChange }) {
       pendingMatchRef.current = nextState.pendingMatch
       updateStatus(nextState.status, { reason: 'match' })
 
+      let transitionCarryoverWords = null
+      let movementLatencyMs = null
       if (nextState.shouldMove) {
         const positionChangedAt = getDiagnosticTime()
+        const nextBlockWords =
+          blocksRef.current[nextState.nextIndex]?.words ?? []
+        const cleanState = resetBlockTracking(nextState.nextIndex, {
+          eventWords: diagnosticContext.progressWords ?? [],
+          nextBlockWords,
+        })
+        transitionCarryoverWords = cleanState.carryoverWords
         lastMovementRef.current = {
           at: decisionAt,
           fromIndex: currentIndex,
@@ -182,7 +227,11 @@ export function useVoiceFollow({ blocks, onPositionChange }) {
         }
         currentBlockIndexRef.current = nextState.nextIndex
         setCurrentBlockIndexState(nextState.nextIndex)
-        resetWordProgress(nextState.nextIndex)
+        movementLatencyMs = diagnosticContext.receivedAt
+          ? Number(
+              (positionChangedAt - diagnosticContext.receivedAt).toFixed(2),
+            )
+          : null
         logVoiceFollowDiagnostic('position-change', {
           currentBlock: currentIndex,
           recognitionToPositionMs: diagnosticContext.receivedAt
@@ -206,7 +255,7 @@ export function useVoiceFollow({ blocks, onPositionChange }) {
           ? matchedWordCountRef.current
           : 0
       const progressWords = diagnosticContext.progressWords?.length
-        ? diagnosticContext.progressWords
+        ? transitionCarryoverWords ?? diagnosticContext.progressWords
         : transcriptWords
       const activeBlockWords = blocksRef.current[activeIndex]?.words ?? []
       const nextMatchedCount = getOrderedPrefixProgress({
@@ -237,9 +286,49 @@ export function useVoiceFollow({ blocks, onPositionChange }) {
         })
       }
 
-      setCurrentTranscriptWords(transcriptWords)
+      const completedBlock = isBlockProgressComplete(
+        nextMatchedCount,
+        activeBlockWords.length,
+      )
+      const justCompletedBlock =
+        completedBlock && previousMatchedCount < activeBlockWords.length
+
+      if (completedBlock) {
+        recognitionSessionRef.current = clearRecognitionTranscript(
+          recognitionSessionRef.current,
+        )
+      }
+      if (justCompletedBlock) {
+        pendingMatchRef.current = { ...EMPTY_PENDING_MATCH }
+        lowConfidenceCountRef.current = 0
+      }
+
+      setCurrentTranscriptWords(
+        transitionCarryoverWords ?? (completedBlock ? [] : transcriptWords),
+      )
+      recordDiagnosticEvent({
+        candidateLine: match ? match.index + 1 : null,
+        confirmationCount: nextState.confirmationCount,
+        currentLine: currentIndex + 1,
+        eventNumber: diagnosticContext.eventNumber,
+        finalWordCount: diagnosticContext.finalWordCount ?? 0,
+        finalWords: diagnosticContext.finalWords ?? [],
+        interimWords: diagnosticContext.interimWords ?? [],
+        movementLatencyMs,
+        resultKind: diagnosticContext.resultKind,
+        rollingWordCount: diagnosticContext.rollingWordCount ?? 0,
+        rollingWords: transcriptWords,
+        score: match ? Number(match.score.toFixed(3)) : null,
+        sessionId: diagnosticContext.sessionId,
+        threshold: match ? Number(match.threshold.toFixed(3)) : null,
+      })
     },
-    [resetWordProgress, scheduleWaitingStatus, updateStatus],
+    [
+      recordDiagnosticEvent,
+      resetBlockTracking,
+      scheduleWaitingStatus,
+      updateStatus,
+    ],
   )
 
   const processRecognitionResult = useCallback(
@@ -259,10 +348,17 @@ export function useVoiceFollow({ blocks, onPositionChange }) {
         time: Number(receivedAt.toFixed(2)),
         transcriptWords: processedResult.rollingWords,
       })
+      eventNumberRef.current += 1
       handleTranscript(processedResult.rollingWords, {
+        eventNumber: eventNumberRef.current,
+        finalWordCount: processedResult.finalWordCount,
+        finalWords: processedResult.eventFinalWords,
+        interimWords: processedResult.interimWords,
         progressWords: processedResult.changedWords,
         receivedAt,
         resultKind: processedResult.resultKind,
+        rollingWordCount: processedResult.rollingWordCount,
+        sessionId: recognitionSessionIdRef.current,
       })
     },
     [handleTranscript],
@@ -292,9 +388,9 @@ export function useVoiceFollow({ blocks, onPositionChange }) {
     })
     setMessage(isSupported ? '' : UNSUPPORTED_MESSAGE)
     window.clearTimeout(waitingTimerRef.current)
-    resetWordProgress()
+    resetBlockTracking()
     stopRecognition()
-  }, [isSupported, resetWordProgress, stopRecognition, updateStatus])
+  }, [isSupported, resetBlockTracking, stopRecognition, updateStatus])
 
   const scheduleRestart = useCallback(() => {
     if (
@@ -322,7 +418,7 @@ export function useVoiceFollow({ blocks, onPositionChange }) {
       setIsEnabled(false)
       updateStatus('Unsupported', { reason: 'browser-support' })
       setMessage(UNSUPPORTED_MESSAGE)
-      resetWordProgress()
+      resetBlockTracking()
       return
     }
 
@@ -330,7 +426,11 @@ export function useVoiceFollow({ blocks, onPositionChange }) {
     recognition.continuous = true
     recognition.interimResults = true
     recognition.lang = 'en-US'
+    recognitionSessionIdRef.current += 1
     recognitionSessionRef.current = createRecognitionSessionState()
+    pendingMatchRef.current = { ...EMPTY_PENDING_MATCH }
+    lowConfidenceCountRef.current = 0
+    setCurrentTranscriptWords([])
 
     recognition.onstart = () => {
       lastSpeechAtRef.current = Date.now()
@@ -349,7 +449,7 @@ export function useVoiceFollow({ blocks, onPositionChange }) {
       if (errorState.disable) {
         enabledRef.current = false
         setIsEnabled(false)
-        resetWordProgress()
+        resetBlockTracking()
         stopRecognition()
         return
       }
@@ -377,14 +477,14 @@ export function useVoiceFollow({ blocks, onPositionChange }) {
       enabledRef.current = false
       setIsEnabled(false)
       updateStatus('Lost', { reason: 'recognition-start-failed' })
-      resetWordProgress()
+      resetBlockTracking()
       setMessage(
         'Speech recognition could not start. Manual teleprompter controls are still available.',
       )
     }
   }, [
     processRecognitionResult,
-    resetWordProgress,
+    resetBlockTracking,
     scheduleRestart,
     scheduleWaitingStatus,
     stopRecognition,
@@ -402,11 +502,9 @@ export function useVoiceFollow({ blocks, onPositionChange }) {
     setIsEnabled(true)
     setMessage('')
     updateStatus('Listening', { reason: 'enabled' })
-    pendingMatchRef.current = { count: 0, index: null }
-    lowConfidenceCountRef.current = 0
-    resetWordProgress()
+    resetBlockTracking()
     startRecognitionRef.current?.()
-  }, [isSupported, resetWordProgress, updateStatus])
+  }, [isSupported, resetBlockTracking, updateStatus])
 
   const toggle = useCallback(() => {
     if (enabledRef.current) disable()
@@ -435,6 +533,10 @@ export function useVoiceFollow({ blocks, onPositionChange }) {
   return {
     currentBlockIndex,
     currentTranscriptWords,
+    diagnostics: {
+      enabled: diagnosticsEnabled,
+      events: diagnosticEvents,
+    },
     disable,
     enable,
     isEnabled,

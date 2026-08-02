@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  clearRecognitionTranscript,
   createRecognitionSessionState,
   processRecognitionEvent,
 } from './voiceRecognitionResults.js'
@@ -96,6 +97,27 @@ test('aggregates multiple changed results into one recognition update', () => {
     'interim',
     'words',
   ])
+  assert.deepEqual(update.eventFinalWords, ['finished', 'words'])
+  assert.deepEqual(update.interimWords, ['interim', 'words'])
+  assert.equal(update.finalWordCount, 2)
+  assert.equal(update.rollingWordCount, 4)
+})
+
+test('final transcript storage remains bounded and can be retired per block', () => {
+  const words = Array.from({ length: 30 }, (_, index) => `word${index}`)
+  const processed = processRecognitionEvent({
+    event: {
+      resultIndex: 0,
+      results: [recognitionResult(words.join(' '), true)],
+    },
+    sessionState: createRecognitionSessionState(),
+  })
+  const cleared = clearRecognitionTranscript(processed.sessionState)
+
+  assert.equal(processed.sessionState.finalWords.length, 18)
+  assert.equal(processed.rollingWordCount, 18)
+  assert.deepEqual(cleared.finalWords, [])
+  assert.equal(cleared.processedFinalResultIndexes.has(0), true)
 })
 
 test('a recognition restart creates fresh session-specific result indexes', () => {

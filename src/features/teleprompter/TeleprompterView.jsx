@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { Focus, FlipHorizontal2, Maximize2, Settings } from 'lucide-react'
+import { Link, useNavigate } from 'react-router-dom'
+import {
+  ArrowLeft,
+  Focus,
+  FlipHorizontal2,
+  Maximize2,
+  Settings,
+} from 'lucide-react'
+import Button from '../../components/Button.jsx'
 import Modal from '../../components/Modal.jsx'
 import IconButton from '../../components/IconButton.jsx'
 import { useLocalStorage } from '../../hooks/useLocalStorage.js'
@@ -19,17 +26,19 @@ import {
 import FloatingTrackpad from './FloatingTrackpad.jsx'
 import {
   canStartTimedScroll,
-  getModeSwitchEffects,
+  getModeControlEffects,
   SCROLL_MODES,
 } from './scrollMode.js'
 import TeleprompterControls from './TeleprompterControls.jsx'
 import { useTeleprompter } from './useTeleprompter.js'
 import { useVoiceFollow } from './useVoiceFollow.js'
+import VoiceFollowDiagnosticsPanel from './VoiceFollowDiagnosticsPanel.jsx'
 import {
   getDiagnosticTime,
   logVoiceFollowDiagnostic,
 } from './voiceFollowDiagnostics.js'
 import { shouldRequestVoiceScroll } from './voiceFollowScroll.js'
+import { leaveTeleprompter } from './teleprompterNavigation.js'
 import {
   createTrackableBlocks,
   toVoiceWords,
@@ -80,6 +89,7 @@ function renderDialogueProgress(text, matchedWordCount) {
 }
 
 export default function TeleprompterView() {
+  const navigate = useNavigate()
   const [script] = useLocalStorage('scripty.script', '')
   const [storedSettings, setSettings] = useLocalStorage(
     'scripty.settings',
@@ -247,9 +257,11 @@ export default function TeleprompterView() {
 
   const changeScrollMode = useCallback(
     (nextMode) => {
-      if (nextMode === scrollMode) return
-
-      const effects = getModeSwitchEffects(nextMode)
+      const effects = getModeControlEffects({
+        currentMode: scrollMode,
+        isVoiceEnabled: voiceFollow.isEnabled,
+        nextMode,
+      })
       if (effects.stopTimed) controls.pause()
       if (effects.stopVoice) voiceFollow.disable()
 
@@ -257,6 +269,18 @@ export default function TeleprompterView() {
       if (effects.startVoice) voiceFollow.enable()
     },
     [controls, scrollMode, voiceFollow],
+  )
+
+  const handleBackToScript = useCallback(
+    (event) => {
+      event?.preventDefault()
+      leaveTeleprompter({
+        navigate,
+        stopTimed: controls.pause,
+        stopVoice: voiceFollow.disable,
+      })
+    },
+    [controls.pause, navigate, voiceFollow.disable],
   )
 
   const handlePrimaryAction =
@@ -338,10 +362,25 @@ export default function TeleprompterView() {
       className={`teleprompter ${settings.focusMode ? 'teleprompter--focus' : ''}`}
     >
       <header className="teleprompter__topbar">
-        <Link className="brand-link" to="/scripts">
-          <span className="brand-mark">S</span>
-          <span>Scripty</span>
-        </Link>
+        <div className="teleprompter__identity">
+          <Link
+            aria-label="Scripty, back to script"
+            className="brand-link"
+            onClick={handleBackToScript}
+            to="/scripts"
+          >
+            <span className="brand-mark">S</span>
+            <span>Scripty</span>
+          </Link>
+          <Button
+            className="teleprompter__back"
+            icon={ArrowLeft}
+            onClick={handleBackToScript}
+            variant="ghost"
+          >
+            Back to Script
+          </Button>
+        </div>
         <div className="teleprompter__actions">
           <IconButton
             className={settings.focusMode ? 'icon-button--active' : ''}
@@ -389,6 +428,8 @@ export default function TeleprompterView() {
           {voiceFollow.message}
         </div>
       ) : null}
+
+      <VoiceFollowDiagnosticsPanel diagnostics={voiceFollow.diagnostics} />
 
       <section
         className="teleprompter__viewport"

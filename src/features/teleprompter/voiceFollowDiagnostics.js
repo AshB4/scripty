@@ -1,6 +1,6 @@
 const IS_DEVELOPMENT = Boolean(import.meta.env?.DEV)
 
-function diagnosticsEnabled() {
+export function voiceFollowDiagnosticsEnabled() {
   if (!IS_DEVELOPMENT || typeof window === 'undefined') return false
 
   try {
@@ -18,7 +18,7 @@ export function getDiagnosticTime() {
 }
 
 export function logVoiceFollowDiagnostic(event, details = {}) {
-  if (!diagnosticsEnabled()) return
+  if (!voiceFollowDiagnosticsEnabled()) return
 
   console.debug(`[Scripty Voice Follow] ${event}`, details)
 }

@@ -1,7 +1,7 @@
 import {
   ChevronsLeft,
   ChevronsRight,
-  Home,
+  ChevronsUp,
   Mic2,
   MicOff,
   Pause,
@@ -28,6 +28,10 @@ export default function TeleprompterControls({
     mode: scrollMode,
   })
   const isVoiceMode = scrollMode === SCROLL_MODES.VOICE
+  const voiceControlLabel =
+    isVoiceMode && voiceFollow.isEnabled
+      ? 'Stop Voice Follow listening'
+      : 'Start Voice Follow Beta listening'
 
   return (
     <div className="teleprompter-controls" aria-label="Teleprompter controls">
@@ -47,12 +51,12 @@ export default function TeleprompterControls({
           <span className="scroll-mode-button__compact-label">Timed</span>
         </button>
         <button
-          aria-label="Voice Follow Beta"
+          aria-label={voiceControlLabel}
           aria-pressed={isVoiceMode}
           className={`scroll-mode-button scroll-mode-button--voice scroll-mode-button--${statusClass} ${isVoiceMode ? 'scroll-mode-button--active' : ''}`}
           disabled={!voiceFollow.isSupported}
           onClick={() => onModeChange(SCROLL_MODES.VOICE)}
-          title="Voice Follow Beta"
+          title={voiceControlLabel}
           type="button"
         >
           <span className="scroll-mode-button__full-label">Voice Follow</span>
@@ -63,7 +67,12 @@ export default function TeleprompterControls({
           ) : null}
         </button>
       </div>
-      <IconButton icon={Home} label="Jump to start" onClick={controls.jumpToStart} />
+      <IconButton
+        icon={ChevronsUp}
+        label="Top"
+        onClick={controls.jumpToStart}
+        title="Scroll to top"
+      />
       <IconButton icon={ChevronsLeft} label="Rewind" onClick={controls.rewind} />
       <IconButton
         icon={

@@ -3,8 +3,11 @@ import test from 'node:test'
 import {
   advanceTimedViewport,
   createTeleprompterKeyMap,
+  leaveTeleprompter,
   MANUAL_SCROLL_DISTANCE,
   moveViewport,
+  SCRIPT_WORKSPACE_ROUTE,
+  scrollViewportToTop,
 } from './teleprompterNavigation.js'
 
 function createViewport(scrollTop = 500) {
@@ -40,6 +43,46 @@ test('manual navigation is available during countdown without changing mode', ()
 
   assert.equal(viewport.scrollTop, 820)
   assert.equal(mode, 'timed')
+})
+
+test('Top scrolls to the beginning without changing routes', () => {
+  const viewport = createViewport()
+  const route = '/teleprompter'
+
+  assert.equal(scrollViewportToTop(viewport), 0)
+
+  assert.equal(viewport.scrollTop, 0)
+  assert.equal(route, '/teleprompter')
+})
+
+test('Back stops both engines before navigating to the script workspace', () => {
+  const calls = []
+
+  leaveTeleprompter({
+    navigate: (route) => calls.push(`navigate:${route}`),
+    stopTimed: () => calls.push('stop-timed'),
+    stopVoice: () => calls.push('stop-voice'),
+  })
+
+  assert.deepEqual(calls, [
+    'stop-voice',
+    'stop-timed',
+    `navigate:${SCRIPT_WORKSPACE_ROUTE}`,
+  ])
+})
+
+test('Back does not mutate persisted script or reading settings', () => {
+  const script = { text: 'Keep this script.' }
+  const settings = { mirror: true, speed: 72 }
+
+  leaveTeleprompter({
+    navigate: () => {},
+    stopTimed: () => {},
+    stopVoice: () => {},
+  })
+
+  assert.deepEqual(script, { text: 'Keep this script.' })
+  assert.deepEqual(settings, { mirror: true, speed: 72 })
 })
 
 test('keyboard navigation uses the same controls in timed and voice modes', () => {

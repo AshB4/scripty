@@ -7,12 +7,27 @@ export function canStartTimedScroll(mode, isVoiceEnabled) {
   return mode === SCROLL_MODES.TIMED && !isVoiceEnabled
 }
 
-export function getModeSwitchEffects(nextMode) {
+export function getModeControlEffects({
+  currentMode,
+  isVoiceEnabled,
+  nextMode,
+}) {
+  if (nextMode === SCROLL_MODES.VOICE) {
+    const isActiveVoiceControl = currentMode === SCROLL_MODES.VOICE
+
+    return {
+      nextMode,
+      startVoice: !isActiveVoiceControl || !isVoiceEnabled,
+      stopTimed: !isActiveVoiceControl,
+      stopVoice: isActiveVoiceControl && isVoiceEnabled,
+    }
+  }
+
   return {
     nextMode,
-    startVoice: nextMode === SCROLL_MODES.VOICE,
-    stopTimed: true,
-    stopVoice: nextMode === SCROLL_MODES.TIMED,
+    startVoice: false,
+    stopTimed: currentMode !== SCROLL_MODES.TIMED,
+    stopVoice: currentMode === SCROLL_MODES.VOICE && isVoiceEnabled,
   }
 }
 

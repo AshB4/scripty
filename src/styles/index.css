@@ -1201,6 +1201,17 @@ svg {
   transition: opacity 220ms ease, transform 220ms ease;
 }
 
+.teleprompter__identity {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+}
+
+.teleprompter__back {
+  min-height: 42px;
+}
+
 .teleprompter__viewport {
   position: absolute;
   inset: 73px 0 0;
@@ -1341,6 +1352,76 @@ svg {
   line-height: 1.45;
   text-align: center;
   transform: translateX(-50%);
+}
+
+.voice-diagnostics {
+  position: fixed;
+  z-index: 35;
+  bottom: 16px;
+  left: 16px;
+  width: min(460px, calc(100% - 32px));
+  max-height: min(52svh, 520px);
+  overflow: hidden;
+  border: 1px solid rgba(56, 189, 248, 0.38);
+  border-radius: 6px;
+  background: rgba(5, 7, 10, 0.96);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.42);
+  color: var(--text-secondary);
+  font-size: 0.68rem;
+}
+
+.voice-diagnostics > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.voice-diagnostics > header div,
+.voice-diagnostics__events article {
+  display: grid;
+  gap: 3px;
+}
+
+.voice-diagnostics strong {
+  color: var(--text-primary);
+}
+
+.voice-diagnostics button {
+  display: inline-flex;
+  min-height: 32px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  padding-inline: 9px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--text-primary);
+  font: inherit;
+  font-weight: 700;
+}
+
+.voice-diagnostics button:hover {
+  border-color: rgba(56, 189, 248, 0.45);
+  background: var(--surface-hover);
+}
+
+.voice-diagnostics__events {
+  max-height: min(42svh, 430px);
+  overflow-y: auto;
+}
+
+.voice-diagnostics__events article {
+  padding: 9px 12px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.voice-diagnostics__events p {
+  margin: 0;
+  padding: 12px;
 }
 
 .prompt-segment {
@@ -1753,6 +1834,17 @@ svg {
 
   .teleprompter__topbar .brand-link span:last-child {
     display: none;
+  }
+
+  .teleprompter__identity {
+    gap: 6px;
+  }
+
+  .teleprompter__back {
+    min-height: 38px;
+    padding-inline: 9px;
+    gap: 6px;
+    font-size: 0.72rem;
   }
 
   .teleprompter__actions {

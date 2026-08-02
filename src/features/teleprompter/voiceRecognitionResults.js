@@ -23,6 +23,7 @@ export function processRecognitionEvent({ event, sessionState }) {
     sessionState.processedFinalResultIndexes,
   )
   const changedWords = []
+  const eventFinalWords = []
   const interimWords = []
   const resultKinds = new Set()
   const firstChangedResult = Math.max(0, event.resultIndex ?? 0)
@@ -42,6 +43,7 @@ export function processRecognitionEvent({ event, sessionState }) {
         processedFinalResultIndexes.add(index)
         finalWords.push(...words)
         changedWords.push(...words)
+        eventFinalWords.push(...words)
       }
     } else {
       resultKinds.add('interim')
@@ -52,10 +54,17 @@ export function processRecognitionEvent({ event, sessionState }) {
 
   return {
     changedWords: changedWords.slice(-ROLLING_TRANSCRIPT_WORDS),
+    eventFinalWords: eventFinalWords.slice(-ROLLING_TRANSCRIPT_WORDS),
+    finalWordCount: Math.min(finalWords.length, ROLLING_TRANSCRIPT_WORDS),
+    interimWords: interimWords.slice(-ROLLING_TRANSCRIPT_WORDS),
     receivedSpeech: changedWords.length > 0,
     resultKind: [...resultKinds].join('+'),
     rollingWords: [...finalWords, ...interimWords].slice(
       -ROLLING_TRANSCRIPT_WORDS,
+    ),
+    rollingWordCount: Math.min(
+      finalWords.length + interimWords.length,
+      ROLLING_TRANSCRIPT_WORDS,
     ),
     sessionState: {
       finalWords: finalWords.slice(-ROLLING_TRANSCRIPT_WORDS),
