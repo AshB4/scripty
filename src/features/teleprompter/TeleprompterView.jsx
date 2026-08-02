@@ -10,6 +10,7 @@ import {
 import Button from '../../components/Button.jsx'
 import Modal from '../../components/Modal.jsx'
 import IconButton from '../../components/IconButton.jsx'
+import scriptyIcon from '../../assets/scripty-icon-128.png'
 import { useLocalStorage } from '../../hooks/useLocalStorage.js'
 import SpeakerSettings from '../scripts/SpeakerSettings.jsx'
 import {
@@ -369,7 +370,14 @@ export default function TeleprompterView() {
             onClick={handleBackToScript}
             to="/scripts"
           >
-            <span className="brand-mark">S</span>
+            <img
+              alt=""
+              aria-hidden="true"
+              className="brand-mark brand-mark--image"
+              height="32"
+              src={scriptyIcon}
+              width="32"
+            />
             <span>Scripty</span>
           </Link>
           <Button
