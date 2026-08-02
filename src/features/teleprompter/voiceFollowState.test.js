@@ -72,6 +72,16 @@ test('weak interim text never moves the current block', () => {
   assert.equal(result.nextIndex, 1)
 })
 
+test('current-block progress does not request block centering', () => {
+  const result = resolveVoiceMatchState({
+    currentIndex: 1,
+    match: { index: 1, isConfident: true },
+  })
+
+  assert.equal(result.shouldMove, false)
+  assert.equal(result.status, 'Following')
+})
+
 test('previous-block movement requires repeated stronger evidence', () => {
   const backwardMatch = {
     index: 1,

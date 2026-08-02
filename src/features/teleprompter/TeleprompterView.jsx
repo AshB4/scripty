@@ -29,6 +29,7 @@ import {
   getDiagnosticTime,
   logVoiceFollowDiagnostic,
 } from './voiceFollowDiagnostics.js'
+import { shouldRequestVoiceScroll } from './voiceFollowScroll.js'
 import {
   createTrackableBlocks,
   toVoiceWords,
@@ -113,6 +114,7 @@ export default function TeleprompterView() {
   )
   const viewportRef = useRef(null)
   const segmentRefs = useRef([])
+  const pendingVoiceScrollBlockRef = useRef(null)
   const voiceScrollEndHandlerRef = useRef(null)
   const voiceScrollTimerRef = useRef(null)
   const isVoiceScrollingRef = useRef(false)
@@ -121,12 +123,34 @@ export default function TeleprompterView() {
     const viewport = viewportRef.current
     const segment = segmentRefs.current[match.block.segmentIndex]
     if (!viewport || !segment) return
+    if (
+      !shouldRequestVoiceScroll(
+        pendingVoiceScrollBlockRef.current,
+        match.index,
+      )
+    ) {
+      logVoiceFollowDiagnostic('scroll-suppressed', {
+        reason: 'same-pending-block',
+        selectedBlock: match.index,
+      })
+      return
+    }
 
     const scrollStartedAt = getDiagnosticTime()
-    const targetTop =
-      segment.offsetTop -
-      viewport.clientHeight / 2 +
-      segment.offsetHeight / 2
+    const maximumScrollTop = Math.max(
+      0,
+      viewport.scrollHeight - viewport.clientHeight,
+    )
+    const targetTop = Math.min(
+      maximumScrollTop,
+      Math.max(
+        0,
+        segment.offsetTop -
+          viewport.clientHeight / 2 +
+          segment.offsetHeight / 2,
+      ),
+    )
+    pendingVoiceScrollBlockRef.current = match.index
     isVoiceScrollingRef.current = true
     window.clearTimeout(voiceScrollTimerRef.current)
     if (voiceScrollEndHandlerRef.current) {
@@ -140,8 +164,19 @@ export default function TeleprompterView() {
       window.clearTimeout(voiceScrollTimerRef.current)
       viewport.removeEventListener('scrollend', voiceScrollEndHandlerRef.current)
       voiceScrollEndHandlerRef.current = null
+      if (pendingVoiceScrollBlockRef.current === match.index) {
+        pendingVoiceScrollBlockRef.current = null
+      }
       isVoiceScrollingRef.current = false
       logVoiceFollowDiagnostic('scroll-settled', {
+        positionToScrollCompleteMs: timing.positionChangedAt
+          ? Number((getDiagnosticTime() - timing.positionChangedAt).toFixed(2))
+          : null,
+        recognitionToScrollCompleteMs: timing.recognitionReceivedAt
+          ? Number(
+              (getDiagnosticTime() - timing.recognitionReceivedAt).toFixed(2),
+            )
+          : null,
         scrollLatencyMs: Number(
           (getDiagnosticTime() - scrollStartedAt).toFixed(2),
         ),
@@ -192,6 +227,23 @@ export default function TeleprompterView() {
     trackableBlocks[voiceFollow.currentBlockIndex]?.segmentIndex ?? 0
   const setCurrentVoiceBlock = voiceFollow.setCurrentBlockIndex
   const isTimedActive = isPlaying || countdownValue !== null
+
+  useEffect(() => {
+    const timing = voiceFollow.wordProgressTiming
+    if (!timing) return
+
+    logVoiceFollowDiagnostic('word-progress-rendered', {
+      calculationToRenderMs: Number(
+        (getDiagnosticTime() - timing.progressCalculatedAt).toFixed(2),
+      ),
+      matchedWords: timing.matchedWordCount,
+      recognitionToRenderMs: timing.recognitionReceivedAt
+        ? Number(
+            (getDiagnosticTime() - timing.recognitionReceivedAt).toFixed(2),
+          )
+        : null,
+    })
+  }, [voiceFollow.wordProgressTiming])
 
   const changeScrollMode = useCallback(
     (nextMode) => {
@@ -268,6 +320,7 @@ export default function TeleprompterView() {
           voiceScrollEndHandlerRef.current,
         )
       }
+      pendingVoiceScrollBlockRef.current = null
     },
     [],
   )
