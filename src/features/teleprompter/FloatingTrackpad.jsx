@@ -1,16 +1,31 @@
-import { ChevronsUpDown, Pause, Play } from 'lucide-react'
+import { ChevronsUpDown, Mic2, MicOff, Pause, Play } from 'lucide-react'
 import { useRef, useState } from 'react'
+import { getPrimaryControlState } from './scrollMode.js'
 
 const clampSpeed = (speed) => Math.min(140, Math.max(20, Math.round(speed)))
 
 export default function FloatingTrackpad({
-  isPlaying,
+  isActive,
+  mode,
   onSpeedChange,
   onToggle,
   speed,
 }) {
   const dragRef = useRef(null)
   const [isDragging, setIsDragging] = useState(false)
+  const primaryControl = getPrimaryControlState({
+    isTimedPlaying: mode === 'timed' && isActive,
+    isVoiceEnabled: mode === 'voice' && isActive,
+    mode,
+  })
+  const StateIcon =
+    mode === 'voice'
+      ? isActive
+        ? MicOff
+        : Mic2
+      : isActive
+        ? Pause
+        : Play
 
   const handlePointerDown = (event) => {
     event.currentTarget.setPointerCapture(event.pointerId)
@@ -34,7 +49,7 @@ export default function FloatingTrackpad({
 
   return (
     <div
-      aria-label={`${isPlaying ? 'Pause' : 'Play'} teleprompter. Drag vertically to change speed.`}
+      aria-label={`${primaryControl.label}. Drag vertically to change timed scroll speed.`}
       className={`floating-trackpad ${isDragging ? 'floating-trackpad--dragging' : ''}`}
       onKeyDown={(event) => {
         if (event.key === 'Enter' || event.key === ' ') {
@@ -53,7 +68,7 @@ export default function FloatingTrackpad({
         <strong>{speed}</strong>
         <small>px/s</small>
       </span>
-      {isPlaying ? <Pause aria-hidden="true" size={18} /> : <Play aria-hidden="true" size={18} />}
+      <StateIcon aria-hidden="true" size={18} />
     </div>
   )
 }

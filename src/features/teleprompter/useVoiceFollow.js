@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   findVoiceMatch,
+  getOrderedPrefixProgress,
   ROLLING_TRANSCRIPT_WORDS,
   toVoiceWords,
 } from './voiceFollowMatcher.js'
@@ -9,6 +10,10 @@ import {
   getRecognitionErrorState,
   resolveVoiceMatchState,
 } from './voiceFollowState.js'
+import {
+  getDiagnosticTime,
+  logVoiceFollowDiagnostic,
+} from './voiceFollowDiagnostics.js'
 
 const WAITING_DELAY = 1500
 const RESTART_DELAY = 250
@@ -28,6 +33,8 @@ export function useVoiceFollow({ blocks, onPositionChange }) {
     isSupported ? '' : UNSUPPORTED_MESSAGE,
   )
   const [currentBlockIndex, setCurrentBlockIndexState] = useState(0)
+  const [currentTranscriptWords, setCurrentTranscriptWords] = useState([])
+  const [matchedWordCount, setMatchedWordCount] = useState(0)
   const blocksRef = useRef(blocks)
   const currentBlockIndexRef = useRef(0)
   const enabledRef = useRef(false)
@@ -39,12 +46,36 @@ export function useVoiceFollow({ blocks, onPositionChange }) {
   const pendingMatchRef = useRef({ count: 0, index: null })
   const lowConfidenceCountRef = useRef(0)
   const lastSpeechAtRef = useRef(null)
+  const lastMovementRef = useRef(null)
+  const matchedWordCountRef = useRef(0)
   const onPositionChangeRef = useRef(onPositionChange)
+  const progressBlockIndexRef = useRef(0)
   const startRecognitionRef = useRef(null)
+
+  const resetWordProgress = useCallback(
+    (blockIndex = currentBlockIndexRef.current, clearRecognitionBuffer = true) => {
+      progressBlockIndexRef.current = blockIndex
+      matchedWordCountRef.current = 0
+      setCurrentTranscriptWords([])
+      setMatchedWordCount(0)
+      if (clearRecognitionBuffer) finalWordsRef.current = []
+    },
+    [],
+  )
 
   useEffect(() => {
     blocksRef.current = blocks
-  }, [blocks])
+    const safeIndex = Math.min(
+      Math.max(0, blocks.length - 1),
+      currentBlockIndexRef.current,
+    )
+    currentBlockIndexRef.current = safeIndex
+    pendingMatchRef.current = { count: 0, index: null }
+    lowConfidenceCountRef.current = 0
+    lastMovementRef.current = null
+    setCurrentBlockIndexState(safeIndex)
+    resetWordProgress(safeIndex)
+  }, [blocks, resetWordProgress])
 
   useEffect(() => {
     onPositionChangeRef.current = onPositionChange
@@ -53,11 +84,21 @@ export function useVoiceFollow({ blocks, onPositionChange }) {
   const setCurrentBlockIndex = useCallback((nextIndex) => {
     const lastIndex = Math.max(0, blocksRef.current.length - 1)
     const safeIndex = Math.min(lastIndex, Math.max(0, nextIndex))
+    if (safeIndex === currentBlockIndexRef.current) return
+
+    const previousIndex = currentBlockIndexRef.current
     currentBlockIndexRef.current = safeIndex
+    lastMovementRef.current = {
+      at: Date.now(),
+      fromIndex: previousIndex,
+      source: 'manual',
+      toIndex: safeIndex,
+    }
     pendingMatchRef.current = { count: 0, index: null }
     lowConfidenceCountRef.current = 0
+    resetWordProgress(safeIndex)
     setCurrentBlockIndexState(safeIndex)
-  }, [])
+  }, [resetWordProgress])
 
   const scheduleWaitingStatus = useCallback(() => {
     window.clearTimeout(waitingTimerRef.current)
@@ -68,38 +109,99 @@ export function useVoiceFollow({ blocks, onPositionChange }) {
   }, [])
 
   const handleTranscript = useCallback(
-    (transcriptWords) => {
+    (transcriptWords, diagnosticContext = {}) => {
       lastSpeechAtRef.current = Date.now()
       scheduleWaitingStatus()
 
+      const matchStartedAt = getDiagnosticTime()
+      const currentIndex = currentBlockIndexRef.current
       const match = findVoiceMatch({
         blocks: blocksRef.current,
-        currentIndex: currentBlockIndexRef.current,
+        currentIndex,
         transcript: transcriptWords,
       })
+      const decisionAt = Date.now()
       const nextState = resolveVoiceMatchState({
-        currentIndex: currentBlockIndexRef.current,
+        currentIndex,
+        lastMovement: lastMovementRef.current,
         lowConfidenceCount: lowConfidenceCountRef.current,
         match,
+        now: decisionAt,
         pendingMatch: pendingMatchRef.current,
+      })
+
+      logVoiceFollowDiagnostic('match', {
+        confidence: match?.confidenceLevel ?? 'none',
+        confirmationCount: nextState.confirmationCount,
+        currentBlock: currentIndex,
+        isCooldownBlocked: nextState.isCooldownBlocked,
+        matchLatencyMs: Number(
+          (getDiagnosticTime() - matchStartedAt).toFixed(2),
+        ),
+        resultKind: diagnosticContext.resultKind,
+        score: match ? Number(match.score.toFixed(3)) : null,
+        selectedBlock: match?.index ?? null,
+        transcriptWords,
       })
 
       lowConfidenceCountRef.current = nextState.lowConfidenceCount
       pendingMatchRef.current = nextState.pendingMatch
       setStatus(nextState.status)
 
-      if (!nextState.shouldMove) return
+      if (nextState.shouldMove) {
+        const positionChangedAt = getDiagnosticTime()
+        lastMovementRef.current = {
+          at: decisionAt,
+          fromIndex: currentIndex,
+          source: 'voice',
+          toIndex: nextState.nextIndex,
+        }
+        currentBlockIndexRef.current = nextState.nextIndex
+        setCurrentBlockIndexState(nextState.nextIndex)
+        resetWordProgress(nextState.nextIndex)
+        logVoiceFollowDiagnostic('position-change', {
+          currentBlock: currentIndex,
+          recognitionToPositionMs: diagnosticContext.receivedAt
+            ? Number(
+                (positionChangedAt - diagnosticContext.receivedAt).toFixed(2),
+              )
+            : null,
+          selectedBlock: nextState.nextIndex,
+          time: Number(positionChangedAt.toFixed(2)),
+        })
+        onPositionChangeRef.current?.(match, {
+          positionChangedAt,
+          recognitionReceivedAt: diagnosticContext.receivedAt,
+        })
+      }
 
-      currentBlockIndexRef.current = nextState.nextIndex
-      setCurrentBlockIndexState(nextState.nextIndex)
-      onPositionChangeRef.current?.(match)
+      const activeIndex = currentBlockIndexRef.current
+      if (match?.isConfident && match.index === activeIndex) {
+        const previousMatchedCount =
+          progressBlockIndexRef.current === activeIndex
+            ? matchedWordCountRef.current
+            : 0
+        const nextMatchedCount = getOrderedPrefixProgress({
+          blockWords: blocksRef.current[activeIndex]?.words ?? [],
+          previousMatchedCount,
+          transcriptWords,
+        })
+
+        progressBlockIndexRef.current = activeIndex
+        matchedWordCountRef.current = nextMatchedCount
+        setMatchedWordCount(nextMatchedCount)
+      }
+
+      setCurrentTranscriptWords(transcriptWords)
     },
-    [scheduleWaitingStatus],
+    [resetWordProgress, scheduleWaitingStatus],
   )
 
   const processRecognitionResult = useCallback(
     (event) => {
+      const receivedAt = getDiagnosticTime()
       const interimWords = []
+      const resultKinds = new Set()
       let receivedSpeech = false
 
       const firstChangedResult = event.resultIndex ?? 0
@@ -115,6 +217,7 @@ export function useVoiceFollow({ blocks, onPositionChange }) {
 
         receivedSpeech = true
         if (result.isFinal) {
+          resultKinds.add('final')
           if (!processedFinalResultsRef.current.has(index)) {
             processedFinalResultsRef.current.add(index)
             finalWordsRef.current = [
@@ -123,6 +226,7 @@ export function useVoiceFollow({ blocks, onPositionChange }) {
             ].slice(-ROLLING_TRANSCRIPT_WORDS)
           }
         } else {
+          resultKinds.add('interim')
           interimWords.push(...words)
         }
       }
@@ -133,7 +237,13 @@ export function useVoiceFollow({ blocks, onPositionChange }) {
         ...finalWordsRef.current,
         ...interimWords,
       ].slice(-ROLLING_TRANSCRIPT_WORDS)
-      handleTranscript(rollingWords)
+      const resultKind = [...resultKinds].join('+')
+      logVoiceFollowDiagnostic('recognition-result', {
+        resultKind,
+        time: Number(receivedAt.toFixed(2)),
+        transcriptWords: rollingWords,
+      })
+      handleTranscript(rollingWords, { receivedAt, resultKind })
     },
     [handleTranscript],
   )
@@ -160,8 +270,9 @@ export function useVoiceFollow({ blocks, onPositionChange }) {
     setStatus(isSupported ? 'Off' : 'Unsupported')
     setMessage(isSupported ? '' : UNSUPPORTED_MESSAGE)
     window.clearTimeout(waitingTimerRef.current)
+    resetWordProgress()
     stopRecognition()
-  }, [isSupported, stopRecognition])
+  }, [isSupported, resetWordProgress, stopRecognition])
 
   const scheduleRestart = useCallback(() => {
     if (
@@ -189,6 +300,7 @@ export function useVoiceFollow({ blocks, onPositionChange }) {
       setIsEnabled(false)
       setStatus('Unsupported')
       setMessage(UNSUPPORTED_MESSAGE)
+      resetWordProgress()
       return
     }
 
@@ -215,6 +327,7 @@ export function useVoiceFollow({ blocks, onPositionChange }) {
       if (errorState.disable) {
         enabledRef.current = false
         setIsEnabled(false)
+        resetWordProgress()
         stopRecognition()
         return
       }
@@ -242,12 +355,14 @@ export function useVoiceFollow({ blocks, onPositionChange }) {
       enabledRef.current = false
       setIsEnabled(false)
       setStatus('Lost')
+      resetWordProgress()
       setMessage(
         'Speech recognition could not start. Manual teleprompter controls are still available.',
       )
     }
   }, [
     processRecognitionResult,
+    resetWordProgress,
     scheduleRestart,
     scheduleWaitingStatus,
     stopRecognition,
@@ -266,20 +381,14 @@ export function useVoiceFollow({ blocks, onPositionChange }) {
     setStatus('Listening')
     pendingMatchRef.current = { count: 0, index: null }
     lowConfidenceCountRef.current = 0
-    finalWordsRef.current = []
+    resetWordProgress()
     startRecognitionRef.current?.()
-  }, [isSupported])
+  }, [isSupported, resetWordProgress])
 
   const toggle = useCallback(() => {
     if (enabledRef.current) disable()
     else enable()
   }, [disable, enable])
-
-  useEffect(() => {
-    if (currentBlockIndexRef.current >= blocks.length) {
-      setCurrentBlockIndex(Math.max(0, blocks.length - 1))
-    }
-  }, [blocks.length, setCurrentBlockIndex])
 
   useEffect(
     () => () => {
@@ -302,13 +411,16 @@ export function useVoiceFollow({ blocks, onPositionChange }) {
 
   return {
     currentBlockIndex,
+    currentTranscriptWords,
     disable,
     enable,
     isEnabled,
     isSupported,
     message,
+    matchedWordCount,
     setCurrentBlockIndex,
     status,
+    totalWordCount: blocks[currentBlockIndex]?.words.length ?? 0,
     toggle,
   }
 }

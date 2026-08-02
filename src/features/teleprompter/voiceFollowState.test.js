@@ -4,6 +4,7 @@ import {
   canScheduleRecognitionRestart,
   getRecognitionErrorState,
   LOST_RESULT_LIMIT,
+  MOVEMENT_COOLDOWN_MS,
   resolveVoiceMatchState,
 } from './voiceFollowState.js'
 
@@ -31,15 +32,98 @@ test('requires the same ordinary match twice before moving', () => {
   assert.equal(second.status, 'Following')
 })
 
-test('allows one immediate move for a very high-confidence result', () => {
+test('allows an immediate very-high-confidence next-block move', () => {
   const result = resolveVoiceMatchState({
-    currentIndex: 0,
-    match: { ...confidentMatch, isVeryHighConfidence: true },
+    currentIndex: 1,
+    match: {
+      ...confidentMatch,
+      index: 2,
+      isImmediateMove: true,
+      isVeryHighConfidence: true,
+    },
   })
 
   assert.equal(result.shouldMove, true)
   assert.equal(result.nextIndex, 2)
   assert.equal(result.status, 'Following')
+})
+
+test('allows a responsive ordinary next-block match without a second result', () => {
+  const result = resolveVoiceMatchState({
+    currentIndex: 1,
+    match: {
+      ...confidentMatch,
+      isImmediateMove: true,
+      isVeryHighConfidence: false,
+    },
+  })
+
+  assert.equal(result.shouldMove, true)
+  assert.equal(result.confirmationCount, 1)
+})
+
+test('weak interim text never moves the current block', () => {
+  const result = resolveVoiceMatchState({
+    currentIndex: 1,
+    match: { index: 2, isConfident: false },
+  })
+
+  assert.equal(result.shouldMove, false)
+  assert.equal(result.nextIndex, 1)
+})
+
+test('previous-block movement requires repeated stronger evidence', () => {
+  const backwardMatch = {
+    index: 1,
+    isConfident: true,
+    isExceptionalBackwardMatch: false,
+    isImmediateMove: false,
+    isVeryHighConfidence: true,
+  }
+  const first = resolveVoiceMatchState({
+    currentIndex: 2,
+    match: backwardMatch,
+  })
+  const second = resolveVoiceMatchState({
+    currentIndex: 2,
+    match: backwardMatch,
+    pendingMatch: first.pendingMatch,
+  })
+
+  assert.equal(first.shouldMove, false)
+  assert.equal(second.shouldMove, true)
+})
+
+test('never accepts a backward jump beyond one dialogue block', () => {
+  const result = resolveVoiceMatchState({
+    currentIndex: 3,
+    match: {
+      index: 1,
+      isConfident: true,
+      isExceptionalBackwardMatch: true,
+      isImmediateMove: true,
+    },
+  })
+
+  assert.equal(result.shouldMove, false)
+  assert.equal(result.nextIndex, 3)
+})
+
+test('movement cooldown prevents an immediate bounce to the prior block', () => {
+  const result = resolveVoiceMatchState({
+    currentIndex: 2,
+    lastMovement: { at: 1000, fromIndex: 1, toIndex: 2 },
+    match: {
+      index: 1,
+      isConfident: true,
+      isExceptionalBackwardMatch: true,
+      isImmediateMove: true,
+    },
+    now: 1000 + MOVEMENT_COOLDOWN_MS - 1,
+  })
+
+  assert.equal(result.shouldMove, false)
+  assert.equal(result.isCooldownBlocked, true)
 })
 
 test('keeps position and becomes Lost after repeated weak results', () => {

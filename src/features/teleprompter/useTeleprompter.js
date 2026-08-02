@@ -1,10 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useKeyboardControls } from '../../hooks/useKeyboardControls.js'
+import {
+  advanceTimedViewport,
+  MANUAL_SCROLL_DISTANCE,
+  moveViewport,
+} from './teleprompterNavigation.js'
 
 export function useTeleprompter({
   countdownEnabled = false,
-  onAutoScrollStart,
+  onPrimaryAction,
   speed = 70,
+  timedPlaybackEnabled = true,
   viewportRef: providedViewportRef,
 } = {}) {
   const internalViewportRef = useRef(null)
@@ -35,7 +41,7 @@ export function useTeleprompter({
       const previous = previousTimeRef.current ?? timestamp
       const delta = timestamp - previous
       previousTimeRef.current = timestamp
-      viewport.scrollTop += (delta / 1000) * speed
+      advanceTimedViewport(viewport, speed, delta)
 
       if (
         viewport.scrollTop + viewport.clientHeight >=
@@ -67,8 +73,9 @@ export function useTeleprompter({
 
   const play = useCallback(
     (withCountdown = false) => {
+      if (!timedPlaybackEnabled) return
+
       cancelCountdown()
-      onAutoScrollStart?.()
 
       if (!withCountdown) {
         setIsPlaying(true)
@@ -91,12 +98,12 @@ export function useTeleprompter({
         setCountdownValue(remaining)
       }, 1000)
     },
-    [cancelCountdown, onAutoScrollStart],
+    [cancelCountdown, timedPlaybackEnabled],
   )
 
   const scrollBy = useCallback(
     (distance) => {
-      viewportRef.current?.scrollBy({ behavior: 'smooth', top: distance })
+      moveViewport(viewportRef.current, distance)
     },
     [viewportRef],
   )
@@ -115,16 +122,17 @@ export function useTeleprompter({
 
   const controls = useMemo(
     () => ({
-      forward: () => scrollBy(320),
+      forward: () => scrollBy(MANUAL_SCROLL_DISTANCE),
       jumpToStart: () => {
-        if (viewportRef.current) {
-          viewportRef.current.scrollTo({ behavior: 'smooth', top: 0 })
-        }
+        const viewport = viewportRef.current
+        if (viewport) viewport.scrollTop = 0
       },
       pause,
       play,
-      rewind: () => scrollBy(-320),
+      rewind: () => scrollBy(-MANUAL_SCROLL_DISTANCE),
       toggle: () => {
+        if (!timedPlaybackEnabled) return
+
         if (isPlaying || countdownValue !== null) {
           pause()
         } else {
@@ -141,6 +149,7 @@ export function useTeleprompter({
       play,
       scrollBy,
       toggleFullscreen,
+      timedPlaybackEnabled,
       viewportRef,
     ],
   )
@@ -148,7 +157,7 @@ export function useTeleprompter({
   useKeyboardControls(
     useMemo(
       () => ({
-        ' ': controls.toggle,
+        ' ': onPrimaryAction ?? controls.toggle,
         ArrowLeft: controls.rewind,
         ArrowRight: controls.forward,
         f: controls.toggleFullscreen,
@@ -156,7 +165,7 @@ export function useTeleprompter({
         Home: controls.jumpToStart,
         Escape: controls.pause,
       }),
-      [controls],
+      [controls, onPrimaryAction],
     ),
   )
 

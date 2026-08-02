@@ -3,6 +3,8 @@ import test from 'node:test'
 import {
   createTrackableBlocks,
   findVoiceMatch,
+  getOrderedPrefixProgress,
+  getVoiceMatchThreshold,
   normalizeVoiceText,
   ROLLING_TRANSCRIPT_WORDS,
   toVoiceWords,
@@ -85,6 +87,36 @@ test('matches a single skipped line', () => {
 
   assert.equal(match.index, 2)
   assert.equal(match.isConfident, true)
+})
+
+test('uses stronger thresholds backward and across larger forward skips', () => {
+  assert.ok(getVoiceMatchThreshold(-1) > getVoiceMatchThreshold(1))
+  assert.ok(getVoiceMatchThreshold(5) > getVoiceMatchThreshold(2))
+})
+
+test('marks a strong partial next-block result as responsive', () => {
+  const match = findVoiceMatch({
+    blocks,
+    currentIndex: 0,
+    transcript: 'thanks for having me',
+  })
+
+  assert.equal(match.index, 1)
+  assert.equal(match.isConfident, true)
+  assert.equal(match.isImmediateMove, true)
+})
+
+test('allows an ordinary confident next-block result to move responsively', () => {
+  const match = findVoiceMatch({
+    blocks,
+    currentIndex: 0,
+    transcript: 'thanks for having me unrelated words',
+  })
+
+  assert.equal(match.index, 1)
+  assert.equal(match.isConfident, true)
+  assert.equal(match.isVeryHighConfidence, false)
+  assert.equal(match.isImmediateMove, true)
 })
 
 test('never searches farther than five blocks forward', () => {
@@ -173,4 +205,103 @@ test('supports arbitrary cast labels while matching dialogue only', () => {
 
   assert.equal(match.index, 1)
   assert.equal(castBlocks[1].words.includes('captain'), false)
+})
+
+test('marks only the first recognized word in the active block', () => {
+  assert.equal(
+    getOrderedPrefixProgress({
+      blockWords: toVoiceWords('Welcome to Scripty.'),
+      transcriptWords: toVoiceWords('Welcome'),
+    }),
+    1,
+  )
+})
+
+test('advances only through the ordered script prefix', () => {
+  const blockWords = toVoiceWords('Welcome to the Scripty studio')
+  const firstUpdate = getOrderedPrefixProgress({
+    blockWords,
+    transcriptWords: toVoiceWords('Welcome to'),
+  })
+  const secondUpdate = getOrderedPrefixProgress({
+    blockWords,
+    previousMatchedCount: firstUpdate,
+    transcriptWords: toVoiceWords('Welcome to the Scripty'),
+  })
+
+  assert.equal(firstUpdate, 2)
+  assert.equal(secondUpdate, 4)
+  assert.equal(
+    getOrderedPrefixProgress({
+      blockWords,
+      transcriptWords: toVoiceWords('Scripty studio'),
+    }),
+    0,
+  )
+})
+
+test('does not mark later repeated words prematurely', () => {
+  const blockWords = toVoiceWords('Go go now')
+  const firstUpdate = getOrderedPrefixProgress({
+    blockWords,
+    transcriptWords: toVoiceWords('Go'),
+  })
+  const repeatedUpdate = getOrderedPrefixProgress({
+    blockWords,
+    previousMatchedCount: firstUpdate,
+    transcriptWords: toVoiceWords('Go'),
+  })
+
+  assert.equal(firstUpdate, 1)
+  assert.equal(repeatedUpdate, 1)
+  assert.equal(
+    getOrderedPrefixProgress({
+      blockWords,
+      transcriptWords: toVoiceWords('Go now'),
+    }),
+    1,
+  )
+})
+
+test('normalizes punctuation while calculating word progress', () => {
+  assert.equal(
+    getOrderedPrefixProgress({
+      blockWords: toVoiceWords('Welcome, to Scripty!'),
+      transcriptWords: toVoiceWords('Welcome to'),
+    }),
+    2,
+  )
+})
+
+test('keeps partial progress monotonic as interim transcripts update', () => {
+  const blockWords = toVoiceWords('Welcome to Scripty')
+  const previousMatchedCount = 2
+
+  assert.equal(
+    getOrderedPrefixProgress({
+      blockWords,
+      previousMatchedCount,
+      transcriptWords: toVoiceWords('Welcome to Scripty'),
+    }),
+    3,
+  )
+  assert.equal(
+    getOrderedPrefixProgress({
+      blockWords,
+      previousMatchedCount,
+      transcriptWords: toVoiceWords('unrelated words'),
+    }),
+    previousMatchedCount,
+  )
+})
+
+test('stale previous-block words cannot complete the next block', () => {
+  const nextBlockWords = toVoiceWords('Welcome to the next chapter now')
+  const staleTranscript = toVoiceWords('Welcome to the previous chapter')
+  const progress = getOrderedPrefixProgress({
+    blockWords: nextBlockWords,
+    transcriptWords: staleTranscript,
+  })
+
+  assert.ok(progress < nextBlockWords.length)
 })

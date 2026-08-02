@@ -1,14 +1,22 @@
 export const LOST_RESULT_LIMIT = 4
+export const MOVEMENT_COOLDOWN_MS = 800
 
 export function resolveVoiceMatchState({
   currentIndex,
+  lastMovement = null,
   lowConfidenceCount = 0,
   match,
+  now = Date.now(),
   pendingMatch = { count: 0, index: null },
 }) {
-  if (!match?.isConfident) {
+  const distance = match ? match.index - currentIndex : 0
+  const isOutsideMovementWindow = distance < -1 || distance > 5
+
+  if (!match?.isConfident || isOutsideMovementWindow) {
     const nextLowConfidenceCount = lowConfidenceCount + 1
     return {
+      confirmationCount: 0,
+      isCooldownBlocked: false,
       lowConfidenceCount: nextLowConfidenceCount,
       nextIndex: currentIndex,
       pendingMatch: { count: 0, index: null },
@@ -18,12 +26,47 @@ export function resolveVoiceMatchState({
     }
   }
 
+  if (match.index === currentIndex) {
+    return {
+      confirmationCount: 0,
+      isCooldownBlocked: false,
+      lowConfidenceCount: 0,
+      nextIndex: currentIndex,
+      pendingMatch: { count: 0, index: null },
+      shouldMove: false,
+      status: 'Following',
+    }
+  }
+
+  const isCooldownBounce =
+    lastMovement &&
+    match.index === lastMovement.fromIndex &&
+    now - lastMovement.at < MOVEMENT_COOLDOWN_MS
+
+  if (isCooldownBounce) {
+    return {
+      confirmationCount: 0,
+      isCooldownBlocked: true,
+      lowConfidenceCount: 0,
+      nextIndex: currentIndex,
+      pendingMatch: { count: 0, index: null },
+      shouldMove: false,
+      status: 'Following',
+    }
+  }
+
   const confirmationCount =
     pendingMatch.index === match.index ? pendingMatch.count + 1 : 1
-  const isConfirmed = match.isVeryHighConfidence || confirmationCount >= 2
+  const canMoveImmediately =
+    distance < 0
+      ? match.isExceptionalBackwardMatch
+      : match.isImmediateMove || match.isVeryHighConfidence
+  const isConfirmed = canMoveImmediately || confirmationCount >= 2
 
   if (!isConfirmed) {
     return {
+      confirmationCount,
+      isCooldownBlocked: false,
       lowConfidenceCount: 0,
       nextIndex: currentIndex,
       pendingMatch: { count: confirmationCount, index: match.index },
@@ -33,6 +76,8 @@ export function resolveVoiceMatchState({
   }
 
   return {
+    confirmationCount,
+    isCooldownBlocked: false,
     lowConfidenceCount: 0,
     nextIndex: match.index,
     pendingMatch: { count: 0, index: null },

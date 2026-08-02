@@ -8,7 +8,7 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "node --test src/features/scripts/scriptImport.test.js src/features/scripts/scriptParser.test.js src/features/teleprompter/voiceFollowMatcher.test.js src/features/teleprompter/voiceFollowState.test.js"
+    "test": "node --test src/features/scripts/scriptImport.test.js src/features/scripts/scriptParser.test.js src/features/teleprompter/scrollMode.test.js src/features/teleprompter/teleprompterNavigation.test.js src/features/teleprompter/voiceFollowMatcher.test.js src/features/teleprompter/voiceFollowState.test.js"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",

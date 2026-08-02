@@ -3,41 +3,80 @@ import {
   ChevronsRight,
   Home,
   Mic2,
+  MicOff,
   Pause,
   Play,
 } from 'lucide-react'
 import IconButton from '../../components/IconButton.jsx'
+import {
+  getPrimaryControlState,
+  SCROLL_MODES,
+} from './scrollMode.js'
 
 export default function TeleprompterControls({
   controls,
   isPlaying,
+  onModeChange,
+  onPrimaryAction,
+  scrollMode,
   voiceFollow,
 }) {
   const statusClass = voiceFollow.status.toLowerCase().replace(/\s+/g, '-')
+  const primaryControl = getPrimaryControlState({
+    isTimedPlaying: isPlaying,
+    isVoiceEnabled: voiceFollow.isEnabled,
+    mode: scrollMode,
+  })
+  const isVoiceMode = scrollMode === SCROLL_MODES.VOICE
 
   return (
     <div className="teleprompter-controls" aria-label="Teleprompter controls">
-      <label
-        className={`voice-follow-toggle voice-follow-toggle--${statusClass}`}
+      <div
+        aria-label="Scroll mode"
+        className="scroll-mode-selector"
+        role="group"
       >
-        <input
+        <button
+          aria-label="Timed Scroll"
+          aria-pressed={scrollMode === SCROLL_MODES.TIMED}
+          className={`scroll-mode-button ${scrollMode === SCROLL_MODES.TIMED ? 'scroll-mode-button--active' : ''}`}
+          onClick={() => onModeChange(SCROLL_MODES.TIMED)}
+          type="button"
+        >
+          <span className="scroll-mode-button__full-label">Timed Scroll</span>
+          <span className="scroll-mode-button__compact-label">Timed</span>
+        </button>
+        <button
           aria-label="Voice Follow Beta"
-          checked={voiceFollow.isEnabled}
+          aria-pressed={isVoiceMode}
+          className={`scroll-mode-button scroll-mode-button--voice scroll-mode-button--${statusClass} ${isVoiceMode ? 'scroll-mode-button--active' : ''}`}
           disabled={!voiceFollow.isSupported}
-          onChange={voiceFollow.onToggle}
-          type="checkbox"
-        />
-        <Mic2 aria-hidden="true" size={17} />
-        <span className="voice-follow-toggle__name">Voice Follow</span>
-        <span className="voice-follow-toggle__beta">Beta</span>
-        <output aria-live="polite">{voiceFollow.status}</output>
-      </label>
+          onClick={() => onModeChange(SCROLL_MODES.VOICE)}
+          title="Voice Follow Beta"
+          type="button"
+        >
+          <span className="scroll-mode-button__full-label">Voice Follow</span>
+          <span className="scroll-mode-button__compact-label">Voice</span>
+          <span className="scroll-mode-button__beta">Beta</span>
+          {isVoiceMode ? (
+            <output aria-live="polite">{voiceFollow.status}</output>
+          ) : null}
+        </button>
+      </div>
       <IconButton icon={Home} label="Jump to start" onClick={controls.jumpToStart} />
       <IconButton icon={ChevronsLeft} label="Rewind" onClick={controls.rewind} />
       <IconButton
-        icon={isPlaying ? Pause : Play}
-        label={isPlaying ? 'Pause' : 'Play'}
-        onClick={controls.toggle}
+        icon={
+          isVoiceMode
+            ? primaryControl.isActive
+              ? MicOff
+              : Mic2
+            : primaryControl.isActive
+              ? Pause
+              : Play
+        }
+        label={primaryControl.label}
+        onClick={onPrimaryAction}
       />
       <IconButton icon={ChevronsRight} label="Forward" onClick={controls.forward} />
     </div>

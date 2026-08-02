@@ -1222,53 +1222,69 @@ svg {
   transform: scaleX(-1);
 }
 
-.voice-follow-toggle {
-  position: relative;
-  display: flex;
+.scroll-mode-selector {
+  display: grid;
   min-height: 42px;
-  align-items: center;
-  gap: 7px;
-  padding: 0 9px;
+  grid-template-columns: 96px 132px;
   border: 1px solid var(--border);
   border-radius: 6px;
   background: rgba(17, 24, 39, 0.82);
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: border-color 160ms ease, background 160ms ease, color 160ms ease;
+  overflow: hidden;
 }
 
-.voice-follow-toggle:hover,
-.voice-follow-toggle:focus-within {
-  border-color: rgba(56, 189, 248, 0.5);
+.scroll-mode-button {
+  display: grid;
+  min-width: 0;
+  place-content: center;
+  padding: 5px 8px;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1.1;
+  transition: background 160ms ease, color 160ms ease;
+}
+
+.scroll-mode-button + .scroll-mode-button {
+  border-left: 1px solid var(--border);
+}
+
+.scroll-mode-button:hover:not(:disabled) {
   background: var(--surface-hover);
   color: var(--text-primary);
 }
 
-.voice-follow-toggle:focus-within {
+.scroll-mode-button:focus-visible {
+  position: relative;
+  z-index: 1;
   outline: 2px solid var(--accent);
-  outline-offset: 3px;
+  outline-offset: -2px;
 }
 
-.voice-follow-toggle input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  opacity: 0;
+.scroll-mode-button--active {
+  background: var(--surface-hover);
+  color: var(--text-primary);
 }
 
-.voice-follow-toggle:has(input:disabled) {
+.scroll-mode-button:disabled {
   cursor: not-allowed;
-  opacity: 0.65;
+  opacity: 0.55;
 }
 
-.voice-follow-toggle__name {
-  color: inherit;
-  font-size: 0.76rem;
-  font-weight: 700;
-  white-space: nowrap;
+.scroll-mode-button--voice {
+  grid-template-columns: auto auto;
+  align-items: center;
+  gap: 2px 5px;
 }
 
-.voice-follow-toggle__beta {
+.scroll-mode-button__compact-label {
+  display: none;
+}
+
+.scroll-mode-button__beta {
   padding: 2px 4px;
   border: 1px solid rgba(56, 189, 248, 0.35);
   border-radius: 3px;
@@ -1279,37 +1295,34 @@ svg {
   text-transform: uppercase;
 }
 
-.voice-follow-toggle output {
-  min-width: 56px;
-  padding-left: 7px;
-  border-left: 1px solid var(--border);
+.scroll-mode-button output {
+  grid-column: 1 / -1;
   color: var(--text-secondary);
-  font-size: 0.68rem;
+  font-size: 0.6rem;
   font-weight: 700;
   text-align: center;
   white-space: nowrap;
 }
 
-.voice-follow-toggle--listening,
-.voice-follow-toggle--following {
-  border-color: rgba(56, 189, 248, 0.55);
+.scroll-mode-button--listening,
+.scroll-mode-button--following {
   color: var(--accent);
 }
 
-.voice-follow-toggle--following output {
+.scroll-mode-button--following output {
   color: #34d399;
 }
 
-.voice-follow-toggle--waiting output {
+.scroll-mode-button--waiting output {
   color: #fbbf24;
 }
 
-.voice-follow-toggle--lost output {
+.scroll-mode-button--lost output {
   color: #fb7185;
 }
 
-.voice-follow-toggle--permission-denied output,
-.voice-follow-toggle--unsupported output {
+.scroll-mode-button--permission-denied output,
+.scroll-mode-button--unsupported output {
   color: #fb7185;
 }
 
@@ -1367,6 +1380,16 @@ svg {
 
 .prompt-segment--active::before {
   width: 5px;
+  opacity: 1;
+}
+
+.prompt-word--spoken {
+  color: var(--text-secondary);
+  opacity: 0.64;
+}
+
+.prompt-word--remaining {
+  color: var(--text-primary);
   opacity: 1;
 }
 
@@ -1751,20 +1774,26 @@ svg {
     height: 38px;
   }
 
-  .voice-follow-toggle {
+  .scroll-mode-selector {
     min-height: 38px;
-    gap: 5px;
-    padding-inline: 7px;
+    grid-template-columns: 50px 84px;
   }
 
-  .voice-follow-toggle__name {
+  .scroll-mode-button {
+    padding-inline: 4px;
+    font-size: 0.65rem;
+  }
+
+  .scroll-mode-button__full-label {
     display: none;
   }
 
-  .voice-follow-toggle output {
-    min-width: 48px;
-    padding-left: 5px;
-    font-size: 0.62rem;
+  .scroll-mode-button__compact-label {
+    display: inline;
+  }
+
+  .scroll-mode-button output {
+    font-size: 0.5rem;
   }
 
   .voice-follow-message {
