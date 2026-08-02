@@ -64,6 +64,16 @@ export default function TeleprompterView() {
     () => createTrackableBlocks(segments),
     [segments],
   )
+  const voiceBlockIndexes = useMemo(
+    () =>
+      new Map(
+        trackableBlocks.map((block, blockIndex) => [
+          block.segmentIndex,
+          blockIndex,
+        ]),
+      ),
+    [trackableBlocks],
+  )
   const viewportRef = useRef(null)
   const segmentRefs = useRef([])
   const voiceScrollTimerRef = useRef(null)
@@ -212,7 +222,11 @@ export default function TeleprompterView() {
       </header>
 
       {voiceFollow.message ? (
-        <div className="voice-follow-message" role="status">
+        <div
+          aria-live="polite"
+          className="voice-follow-message"
+          role="status"
+        >
           {voiceFollow.message}
         </div>
       ) : null}
@@ -233,14 +247,31 @@ export default function TeleprompterView() {
             segments.map((segment, segmentIndex) => {
               const blockType = segment.type ?? 'dialogue'
               const isDialogue = blockType === 'dialogue'
+              const voiceBlockIndex = voiceBlockIndexes.get(segmentIndex)
               const isActive =
                 isDialogue && segmentIndex === activeSegmentIndex
+              const isSpoken =
+                isDialogue && voiceBlockIndex < voiceFollow.currentBlockIndex
+              const isUpcoming =
+                isDialogue && voiceBlockIndex > voiceFollow.currentBlockIndex
 
               return (
                 <article
                   className={`prompt-segment prompt-segment--${blockType} ${
                     isActive ? 'prompt-segment--active' : ''
+                  } ${isSpoken ? 'prompt-segment--spoken' : ''} ${
+                    isUpcoming ? 'prompt-segment--upcoming' : ''
                   }`}
+                  aria-current={isActive ? 'true' : undefined}
+                  data-voice-state={
+                    isActive
+                      ? 'current'
+                      : isSpoken
+                        ? 'spoken'
+                        : isUpcoming
+                          ? 'upcoming'
+                          : undefined
+                  }
                   key={segment.id}
                   ref={(element) => {
                     segmentRefs.current[segmentIndex] = element

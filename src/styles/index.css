@@ -1287,6 +1287,7 @@ svg {
   font-size: 0.68rem;
   font-weight: 700;
   text-align: center;
+  white-space: nowrap;
 }
 
 .voice-follow-toggle--listening,
@@ -1304,6 +1305,11 @@ svg {
 }
 
 .voice-follow-toggle--lost output {
+  color: #fb7185;
+}
+
+.voice-follow-toggle--permission-denied output,
+.voice-follow-toggle--unsupported output {
   color: #fb7185;
 }
 
@@ -1340,6 +1346,23 @@ svg {
 
 .prompt-segment--active {
   background: rgba(56, 189, 248, 0.045);
+}
+
+.prompt-segment--spoken > span,
+.prompt-segment--spoken p {
+  color: var(--text-secondary);
+  opacity: 0.7;
+}
+
+.prompt-segment--upcoming > span,
+.prompt-segment--upcoming p {
+  opacity: 0.96;
+}
+
+.prompt-segment--active > span,
+.prompt-segment--active p {
+  color: var(--text-primary);
+  opacity: 1;
 }
 
 .prompt-segment--active::before {

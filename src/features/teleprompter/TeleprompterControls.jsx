@@ -13,12 +13,15 @@ export default function TeleprompterControls({
   isPlaying,
   voiceFollow,
 }) {
+  const statusClass = voiceFollow.status.toLowerCase().replace(/\s+/g, '-')
+
   return (
     <div className="teleprompter-controls" aria-label="Teleprompter controls">
       <label
-        className={`voice-follow-toggle voice-follow-toggle--${voiceFollow.status.toLowerCase()}`}
+        className={`voice-follow-toggle voice-follow-toggle--${statusClass}`}
       >
         <input
+          aria-label="Voice Follow Beta"
           checked={voiceFollow.isEnabled}
           disabled={!voiceFollow.isSupported}
           onChange={voiceFollow.onToggle}

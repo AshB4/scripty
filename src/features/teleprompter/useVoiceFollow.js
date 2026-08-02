@@ -4,10 +4,16 @@ import {
   ROLLING_TRANSCRIPT_WORDS,
   toVoiceWords,
 } from './voiceFollowMatcher.js'
+import {
+  canScheduleRecognitionRestart,
+  getRecognitionErrorState,
+  resolveVoiceMatchState,
+} from './voiceFollowState.js'
 
 const WAITING_DELAY = 1500
-const LOST_RESULT_LIMIT = 4
 const RESTART_DELAY = 250
+const UNSUPPORTED_MESSAGE =
+  'Voice Follow is unavailable in this browser. Use current Chrome for the best experience.'
 
 function getRecognitionConstructor() {
   if (typeof window === 'undefined') return null
@@ -19,9 +25,7 @@ export function useVoiceFollow({ blocks, onPositionChange }) {
   const [isEnabled, setIsEnabled] = useState(false)
   const [status, setStatus] = useState(isSupported ? 'Off' : 'Unsupported')
   const [message, setMessage] = useState(
-    isSupported
-      ? ''
-      : 'Voice Follow is unavailable in this browser. Use Chrome for the best experience.',
+    isSupported ? '' : UNSUPPORTED_MESSAGE,
   )
   const [currentBlockIndex, setCurrentBlockIndexState] = useState(0)
   const blocksRef = useRef(blocks)
@@ -73,35 +77,21 @@ export function useVoiceFollow({ blocks, onPositionChange }) {
         currentIndex: currentBlockIndexRef.current,
         transcript: transcriptWords,
       })
+      const nextState = resolveVoiceMatchState({
+        currentIndex: currentBlockIndexRef.current,
+        lowConfidenceCount: lowConfidenceCountRef.current,
+        match,
+        pendingMatch: pendingMatchRef.current,
+      })
 
-      if (!match?.isConfident) {
-        lowConfidenceCountRef.current += 1
-        pendingMatchRef.current = { count: 0, index: null }
-        setStatus(
-          lowConfidenceCountRef.current >= LOST_RESULT_LIMIT
-            ? 'Lost'
-            : 'Listening',
-        )
-        return
-      }
+      lowConfidenceCountRef.current = nextState.lowConfidenceCount
+      pendingMatchRef.current = nextState.pendingMatch
+      setStatus(nextState.status)
 
-      lowConfidenceCountRef.current = 0
-      const pending = pendingMatchRef.current
-      const confirmationCount = pending.index === match.index ? pending.count + 1 : 1
-      pendingMatchRef.current = { count: confirmationCount, index: match.index }
+      if (!nextState.shouldMove) return
 
-      if (!match.isVeryHighConfidence && confirmationCount < 2) {
-        setStatus('Listening')
-        return
-      }
-
-      pendingMatchRef.current = { count: 0, index: null }
-      setStatus('Following')
-
-      if (match.index === currentBlockIndexRef.current) return
-
-      currentBlockIndexRef.current = match.index
-      setCurrentBlockIndexState(match.index)
+      currentBlockIndexRef.current = nextState.nextIndex
+      setCurrentBlockIndexState(nextState.nextIndex)
       onPositionChangeRef.current?.(match)
     },
     [scheduleWaitingStatus],
@@ -112,7 +102,13 @@ export function useVoiceFollow({ blocks, onPositionChange }) {
       const interimWords = []
       let receivedSpeech = false
 
-      for (let index = 0; index < event.results.length; index += 1) {
+      const firstChangedResult = event.resultIndex ?? 0
+
+      for (
+        let index = firstChangedResult;
+        index < event.results.length;
+        index += 1
+      ) {
         const result = event.results[index]
         const words = toVoiceWords(result[0]?.transcript)
         if (!words.length) continue
@@ -162,9 +158,27 @@ export function useVoiceFollow({ blocks, onPositionChange }) {
     enabledRef.current = false
     setIsEnabled(false)
     setStatus(isSupported ? 'Off' : 'Unsupported')
+    setMessage(isSupported ? '' : UNSUPPORTED_MESSAGE)
     window.clearTimeout(waitingTimerRef.current)
     stopRecognition()
   }, [isSupported, stopRecognition])
+
+  const scheduleRestart = useCallback(() => {
+    if (
+      !canScheduleRecognitionRestart({
+        hasRecognition: Boolean(recognitionRef.current),
+        isEnabled: enabledRef.current,
+        isRestartScheduled: Boolean(restartTimerRef.current),
+      })
+    ) {
+      return
+    }
+
+    restartTimerRef.current = window.setTimeout(() => {
+      restartTimerRef.current = null
+      startRecognitionRef.current?.()
+    }, RESTART_DELAY)
+  }, [])
 
   const startRecognition = useCallback(() => {
     if (!enabledRef.current || recognitionRef.current) return
@@ -174,9 +188,7 @@ export function useVoiceFollow({ blocks, onPositionChange }) {
       enabledRef.current = false
       setIsEnabled(false)
       setStatus('Unsupported')
-      setMessage(
-        'Voice Follow is unavailable in this browser. Use Chrome for the best experience.',
-      )
+      setMessage(UNSUPPORTED_MESSAGE)
       return
     }
 
@@ -196,39 +208,30 @@ export function useVoiceFollow({ blocks, onPositionChange }) {
     recognition.onerror = (event) => {
       if (!enabledRef.current && event.error === 'aborted') return
 
-      if (
-        event.error === 'not-allowed' ||
-        event.error === 'service-not-allowed'
-      ) {
+      const errorState = getRecognitionErrorState(event.error)
+      setStatus(errorState.status)
+      setMessage(errorState.message)
+
+      if (errorState.disable) {
         enabledRef.current = false
         setIsEnabled(false)
-        setStatus('Off')
-        setMessage(
-          'Microphone permission was denied. Manual teleprompter controls are still available.',
-        )
         stopRecognition()
         return
       }
 
-      if (event.error === 'no-speech' || event.error === 'aborted') {
-        setStatus('Waiting')
-        return
+      if (errorState.retry) {
+        try {
+          recognition.stop()
+        } catch {
+          // The end handler will restart if this session already stopped.
+        }
       }
-
-      setStatus('Lost')
-      setMessage(
-        event.error === 'audio-capture'
-          ? 'No microphone is available. Manual teleprompter controls are still available.'
-          : 'Speech recognition was interrupted. Voice Follow will retry automatically.',
-      )
     }
     recognition.onend = () => {
-      recognitionRef.current = null
-      if (!enabledRef.current) return
+      if (recognitionRef.current !== recognition) return
 
-      restartTimerRef.current = window.setTimeout(() => {
-        startRecognitionRef.current?.()
-      }, RESTART_DELAY)
+      recognitionRef.current = null
+      scheduleRestart()
     }
 
     recognitionRef.current = recognition
@@ -236,12 +239,19 @@ export function useVoiceFollow({ blocks, onPositionChange }) {
       recognition.start()
     } catch {
       recognitionRef.current = null
+      enabledRef.current = false
+      setIsEnabled(false)
       setStatus('Lost')
       setMessage(
         'Speech recognition could not start. Manual teleprompter controls are still available.',
       )
     }
-  }, [processRecognitionResult, scheduleWaitingStatus, stopRecognition])
+  }, [
+    processRecognitionResult,
+    scheduleRestart,
+    scheduleWaitingStatus,
+    stopRecognition,
+  ])
 
   useEffect(() => {
     startRecognitionRef.current = startRecognition
