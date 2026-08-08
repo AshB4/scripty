@@ -1,7 +1,7 @@
 import { createBrowserRouter } from 'react-router-dom'
 import LandingPage from '../features/landing/LandingPage.jsx'
 import ScriptWorkspace from '../features/scripts/ScriptWorkspace.jsx'
-import TeleprompterView from '../features/teleprompter/TeleprompterView.jsx'
+import TeleprompterView from '../features/teleprompter/view/TeleprompterView.jsx'
 
 export const router = createBrowserRouter([
   {

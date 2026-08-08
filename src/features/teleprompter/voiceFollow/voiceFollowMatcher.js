@@ -1,3 +1,5 @@
+import { isSpeakableBlock } from '../../scripts/scriptParser.js';
+
 export const ROLLING_TRANSCRIPT_WORDS = 18
 export const VOICE_MATCH_THRESHOLDS = {
   current: 0.46,
@@ -61,7 +63,7 @@ export function getOrderedPrefixProgress({
 
 export function createTrackableBlocks(segments) {
   return segments.flatMap((segment, segmentIndex) => {
-    if (segment.type && segment.type !== 'dialogue') return []
+    if (!isSpeakableBlock(segment)) return []
 
     const words = toVoiceWords(segment.text)
 

@@ -23,6 +23,10 @@ function labelFor(block) {
     return 'Parenthetical'
   }
 
+  if (block.type === 'direction' && block.subtype === 'action') {
+    return 'Action / stage direction'
+  }
+
   if (block.type === 'direction' && block.subtype === 'display-cue') {
     return 'Display cue'
   }

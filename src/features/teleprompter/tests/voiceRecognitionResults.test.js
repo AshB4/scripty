@@ -4,7 +4,7 @@ import {
   clearRecognitionTranscript,
   createRecognitionSessionState,
   processRecognitionEvent,
-} from './voiceRecognitionResults.js'
+} from '../voiceFollow/voiceRecognitionResults.js'
 
 function recognitionResult(transcript, isFinal = false) {
   const result = [{ transcript }]
@@ -117,7 +117,94 @@ test('final transcript storage remains bounded and can be retired per block', ()
   assert.equal(processed.sessionState.finalWords.length, 18)
   assert.equal(processed.rollingWordCount, 18)
   assert.deepEqual(cleared.finalWords, [])
-  assert.equal(cleared.processedFinalResultIndexes.has(0), true)
+  assert.equal(cleared.highestProcessedFinalResultIndex, 0)
+  assert.equal('processedFinalResultIndexes' in cleared, false)
+})
+
+test('ignores an unchanged interim revision', () => {
+  const event = {
+    resultIndex: 0,
+    results: [recognitionResult('Did you sleep at all')],
+  }
+  const first = processRecognitionEvent({
+    event,
+    sessionState: createRecognitionSessionState(),
+  })
+  const repeated = processRecognitionEvent({
+    event,
+    sessionState: first.sessionState,
+  })
+
+  assert.equal(first.receivedSpeech, true)
+  assert.equal(first.isDuplicateRevision, false)
+  assert.equal(repeated.receivedSpeech, false)
+  assert.equal(repeated.isDuplicateRevision, true)
+  assert.deepEqual(repeated.changedWords, [])
+})
+
+test('processes realistic interim revisions once and accepts the final result', () => {
+  const revisions = [
+    'Did',
+    'Did you',
+    'Did you sleep',
+    'Did you sleep at',
+    'Did you sleep at all',
+  ]
+  let sessionState = createRecognitionSessionState()
+  let processedCount = 0
+  let duplicateCount = 0
+
+  revisions.forEach((transcript) => {
+    const event = {
+      resultIndex: 0,
+      results: [recognitionResult(transcript)],
+    }
+    const changed = processRecognitionEvent({ event, sessionState })
+    sessionState = changed.sessionState
+    processedCount += Number(changed.receivedSpeech)
+
+    const duplicate = processRecognitionEvent({ event, sessionState })
+    sessionState = duplicate.sessionState
+    duplicateCount += Number(duplicate.isDuplicateRevision)
+  })
+
+  const final = processRecognitionEvent({
+    event: {
+      resultIndex: 0,
+      results: [recognitionResult('Did you sleep at all?', true)],
+    },
+    sessionState,
+  })
+
+  assert.equal(processedCount, revisions.length)
+  assert.equal(duplicateCount, revisions.length)
+  assert.equal(final.receivedSpeech, true)
+  assert.equal(final.sessionState.highestProcessedFinalResultIndex, 0)
+})
+
+test('final-result tracking stays constant-size across a long session', () => {
+  let sessionState = createRecognitionSessionState()
+
+  for (let index = 0; index < 5000; index += 1) {
+    sessionState = processRecognitionEvent({
+      event: {
+        resultIndex: index,
+        results: {
+          [index]: recognitionResult(`final phrase ${index}`, true),
+          length: index + 1,
+        },
+      },
+      sessionState,
+    }).sessionState
+  }
+
+  assert.equal(sessionState.finalWords.length <= 18, true)
+  assert.equal(sessionState.highestProcessedFinalResultIndex, 4999)
+  assert.deepEqual(Object.keys(sessionState).sort(), [
+    'finalWords',
+    'highestProcessedFinalResultIndex',
+    'lastInterimSignature',
+  ])
 })
 
 test('a recognition restart creates fresh session-specific result indexes', () => {

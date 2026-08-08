@@ -24,9 +24,14 @@ export default function ScriptAnalysis({
   const effectiveType =
     typeOverride === 'Auto' ? analysis.scriptType : typeOverride
   const isLowConfidence = analysis.confidence === 'Low'
+  const isManualOverride = typeOverride !== 'Auto'
+  const blockTypeSummary = Object.entries(analysis.blockTypes)
+    .map(([type, count]) => `${count} ${type}`)
+    .join(', ')
   const metrics = [
     metric(analysis.speakerCount, 'speaker'),
-    metric(analysis.dialogue, 'dialogue block'),
+    metric(analysis.parsedBlockCount, 'parsed block'),
+    metric(analysis.speakableBlockCount, 'speakable block'),
     analysis.direction ? metric(analysis.direction, 'direction') : null,
     analysis.displayAndSection
       ? metric(analysis.displayAndSection, 'display / section block')
@@ -46,6 +51,9 @@ export default function ScriptAnalysis({
         </div>
       </header>
       <div className="script-analysis__detection">
+        <span>
+          Detected: <strong>{analysis.scriptType}</strong>
+        </span>
         {analysis.documentType ? (
           <span>
             Looks like: <strong>{analysis.documentType}</strong>
@@ -54,6 +62,12 @@ export default function ScriptAnalysis({
         <span>
           Confidence: <strong>{analysis.confidence}</strong>
         </span>
+        <span>
+          Parser: <strong>{analysis.parserMode}</strong>
+          {isManualOverride ? ' (manual)' : ''}
+        </span>
+        <p>{analysis.detectionReason}</p>
+        <p>Block types: {blockTypeSummary || 'None'}</p>
         {isLowConfidence && typeOverride === 'Auto' ? (
           <p>
             This document doesn't strongly match a supported production script.

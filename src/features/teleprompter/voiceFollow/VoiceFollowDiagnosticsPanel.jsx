@@ -8,6 +8,7 @@ function formatWords(words) {
 export default function VoiceFollowDiagnosticsPanel({ diagnostics }) {
   const [copied, setCopied] = useState(false)
   const events = diagnostics.events
+  const metrics = diagnostics.summary
   const summary = useMemo(
     () => ({
       maxFinalWords: Math.max(0, ...events.map((event) => event.finalWordCount)),
@@ -23,7 +24,9 @@ export default function VoiceFollowDiagnosticsPanel({ diagnostics }) {
 
   const copyDiagnostics = async () => {
     try {
-      await navigator.clipboard.writeText(JSON.stringify(events, null, 2))
+      await navigator.clipboard.writeText(
+        JSON.stringify({ summary: metrics, events }, null, 2),
+      )
       setCopied(true)
       window.setTimeout(() => setCopied(false), 1500)
     } catch {
@@ -52,6 +55,47 @@ export default function VoiceFollowDiagnosticsPanel({ diagnostics }) {
           {copied ? 'Copied' : 'Copy Diagnostics'}
         </button>
       </header>
+      <div className="voice-diagnostics__summary">
+        <span>
+          Events/sec <strong>{metrics.eventRate}</strong>
+        </span>
+        <span>
+          Events <strong>{metrics.recognitionEventCount}</strong> ({metrics.interimEventCount}{' '}
+          interim / {metrics.finalEventCount} final)
+        </span>
+        <span>
+          Duplicate revisions <strong>{metrics.duplicateRevisionCount}</strong>
+        </span>
+        <span>
+          Longest event <strong>{metrics.longestEventProcessingMs} ms</strong>
+        </span>
+        <span>
+          Longest match <strong>{metrics.longestMatcherMs} ms</strong>
+        </span>
+        <span>
+          Transcript max <strong>{metrics.maxTranscriptCharacters} chars</strong>
+        </span>
+        <span>
+          State updates <strong>{metrics.stateUpdateCount}</strong>
+        </span>
+        <span>
+          Blocks / scrolls <strong>{metrics.activeBlockChanges}</strong> /{' '}
+          <strong>{metrics.scrollRequestCount}</strong>
+        </span>
+        <span>
+          Recognition start / end / restart{' '}
+          <strong>{metrics.recognitionStartCount}</strong> /{' '}
+          <strong>{metrics.recognitionEndCount}</strong> /{' '}
+          <strong>{metrics.recognitionRestartCount}</strong>
+        </span>
+        <span>
+          Active instances <strong>{metrics.activeRecognitionInstances}</strong>{' '}
+          (max {metrics.maxActiveRecognitionInstances})
+        </span>
+        <span>
+          Longest main-thread task <strong>{metrics.longestLongTaskMs} ms</strong>
+        </span>
+      </div>
       <div className="voice-diagnostics__events" role="log">
         {events.length ? (
           events.map((event) => (
@@ -78,6 +122,10 @@ export default function VoiceFollowDiagnosticsPanel({ diagnostics }) {
                 {event.movementLatencyMs === null
                   ? 'no movement'
                   : `${event.movementLatencyMs} ms`}
+              </span>
+              <span>
+                Processing: {event.totalProcessingMs ?? 'n/a'} ms · Transcript:{' '}
+                {event.transcriptCharacterCount} chars
               </span>
             </article>
           ))

@@ -6,7 +6,8 @@ import {
 export function createRecognitionSessionState() {
   return {
     finalWords: [],
-    processedFinalResultIndexes: new Set(),
+    highestProcessedFinalResultIndex: -1,
+    lastInterimSignature: '',
   }
 }
 
@@ -19,14 +20,15 @@ export function clearRecognitionTranscript(sessionState) {
 
 export function processRecognitionEvent({ event, sessionState }) {
   const finalWords = [...sessionState.finalWords]
-  const processedFinalResultIndexes = new Set(
-    sessionState.processedFinalResultIndexes,
-  )
+  let highestProcessedFinalResultIndex =
+    sessionState.highestProcessedFinalResultIndex ?? -1
   const changedWords = []
   const eventFinalWords = []
   const interimWords = []
+  const interimSignatures = []
   const resultKinds = new Set()
   const firstChangedResult = Math.max(0, event.resultIndex ?? 0)
+  let transcriptCharacterCount = 0
 
   for (
     let index = firstChangedResult;
@@ -34,13 +36,15 @@ export function processRecognitionEvent({ event, sessionState }) {
     index += 1
   ) {
     const result = event.results[index]
-    const words = toVoiceWords(result[0]?.transcript)
+    const transcript = result[0]?.transcript ?? ''
+    const words = toVoiceWords(transcript)
+    transcriptCharacterCount += transcript.length
     if (!words.length) continue
 
     if (result.isFinal) {
       resultKinds.add('final')
-      if (!processedFinalResultIndexes.has(index)) {
-        processedFinalResultIndexes.add(index)
+      if (index > highestProcessedFinalResultIndex) {
+        highestProcessedFinalResultIndex = index
         finalWords.push(...words)
         changedWords.push(...words)
         eventFinalWords.push(...words)
@@ -48,15 +52,22 @@ export function processRecognitionEvent({ event, sessionState }) {
     } else {
       resultKinds.add('interim')
       interimWords.push(...words)
-      changedWords.push(...words)
+      interimSignatures.push(`${index}:${words.join(' ')}`)
     }
   }
+
+  const interimSignature = interimSignatures.join('|')
+  const interimChanged = interimSignature !== sessionState.lastInterimSignature
+  if (interimChanged) changedWords.push(...interimWords)
+  const isDuplicateRevision =
+    eventFinalWords.length === 0 && (!interimWords.length || !interimChanged)
 
   return {
     changedWords: changedWords.slice(-ROLLING_TRANSCRIPT_WORDS),
     eventFinalWords: eventFinalWords.slice(-ROLLING_TRANSCRIPT_WORDS),
     finalWordCount: Math.min(finalWords.length, ROLLING_TRANSCRIPT_WORDS),
     interimWords: interimWords.slice(-ROLLING_TRANSCRIPT_WORDS),
+    isDuplicateRevision,
     receivedSpeech: changedWords.length > 0,
     resultKind: [...resultKinds].join('+'),
     rollingWords: [...finalWords, ...interimWords].slice(
@@ -68,7 +79,9 @@ export function processRecognitionEvent({ event, sessionState }) {
     ),
     sessionState: {
       finalWords: finalWords.slice(-ROLLING_TRANSCRIPT_WORDS),
-      processedFinalResultIndexes,
+      highestProcessedFinalResultIndex,
+      lastInterimSignature: interimSignature,
     },
+    transcriptCharacterCount,
   }
 }

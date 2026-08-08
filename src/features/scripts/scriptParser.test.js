@@ -1,13 +1,16 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { infernalCourtSample } from './fixtures/infernalCourtSample.js'
+import { stagePlaySample } from './fixtures/stagePlaySample.js'
 import {
   analyzeScript,
   countWords,
+  getSpeakableBlocks,
   getSpeakers,
   normalizeSpeaker,
   normalizeSpeakerColors,
   parseScript,
+  resolveParserMode,
 } from './scriptParser.js'
 
 function blocksOfType(blocks, type) {
@@ -188,6 +191,68 @@ BOB: I agree.`)
     'ALICE',
     'BOB',
   ])
+})
+
+test('screenplay mode separates stage directions from speakable dialogue', () => {
+  const blocks = parseScript(stagePlaySample, { scriptType: 'Screenplay' })
+  const speakable = getSpeakableBlocks(blocks)
+  const analysis = analyzeScript(blocks, stagePlaySample, {
+    parserMode: 'Screenplay',
+  })
+
+  assert.deepEqual(
+    speakable.map((block) => block.text),
+    [
+      'Did you sleep at all?',
+      'Not enough to call it sleep.',
+      'You could still change your mind.',
+      'That is what I am afraid of.',
+      'They are early.',
+    ],
+  )
+  assert.equal(
+    blocks.find((block) => block.text === 'A small kitchen before sunrise.')
+      ?.subtype,
+    'action',
+  )
+  assert.equal(
+    blocks.find((block) => block.text === 'A knock at the door.')?.subtype,
+    'action',
+  )
+  assert.equal(
+    blocks.find((block) => block.text === '(quietly)')?.subtype,
+    'parenthetical',
+  )
+  assert.equal(
+    blocks.find((block) => block.text === 'SCENE 1')?.type,
+    'scene',
+  )
+  assert.equal(
+    blocks.find((block) => block.text === 'BLACKOUT.')?.type,
+    'transition',
+  )
+  assert.equal(analysis.parsedBlockCount, blocks.length)
+  assert.equal(analysis.speakableBlockCount, 5)
+  assert.deepEqual(analysis.blockTypes, {
+    dialogue: 5,
+    direction: 4,
+    scene: 1,
+    section: 1,
+    transition: 1,
+  })
+})
+
+test('automatic parser mode recognizes stage-play structure', () => {
+  assert.equal(resolveParserMode(stagePlaySample), 'Stage play')
+
+  const blocks = parseScript(stagePlaySample)
+  const analysis = analyzeScript(blocks, stagePlaySample, {
+    parserMode: resolveParserMode(stagePlaySample),
+  })
+
+  assert.equal(analysis.scriptType, 'Stage play')
+  assert.equal(analysis.confidence, 'High')
+  assert.equal(analysis.speakableBlockCount, 5)
 })
 
 test('recognizes podcast, stage play, and generic teleprompter samples', () => {

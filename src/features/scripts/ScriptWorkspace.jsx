@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { FileUp, Maximize2, Mic2, Play, Trash2 } from 'lucide-react'
 import Button from '../../components/Button.jsx'
 import Modal from '../../components/Modal.jsx'
+import scriptyIcon from '../../assets/scripty-icon-128.png'
 import { useLocalStorage } from '../../hooks/useLocalStorage.js'
 import ScriptDropzone from './ScriptDropzone.jsx'
 import ParsedScriptPreview from './ParsedScriptPreview.jsx'
@@ -15,6 +16,7 @@ import {
   getSpeakers,
   normalizeSpeakerColors,
   parseScript,
+  resolveParserMode,
   speakerColorsAreEqual,
 } from './scriptParser.js'
 import { DEFAULT_SETTINGS, resolveSettings } from './scriptSettings.js'
@@ -47,11 +49,18 @@ export default function ScriptWorkspace() {
   })
   const importRequestId = useRef(0)
   const settings = resolveSettings(storedSettings)
-  const segments = useMemo(() => parseScript(script), [script])
+  const parserMode = useMemo(
+    () => resolveParserMode(script, scriptTypeOverride),
+    [script, scriptTypeOverride],
+  )
+  const segments = useMemo(
+    () => parseScript(script, { scriptType: parserMode }),
+    [parserMode, script],
+  )
   const speakers = useMemo(() => getSpeakers(segments), [segments])
   const analysis = useMemo(
-    () => analyzeScript(segments, script),
-    [script, segments],
+    () => analyzeScript(segments, script, { parserMode }),
+    [parserMode, script, segments],
   )
   const normalizedSpeakerColors = useMemo(
     () => normalizeSpeakerColors(speakerColors, speakers),
@@ -135,7 +144,14 @@ export default function ScriptWorkspace() {
     <main className="workspace shell">
       <header className="workspace__header">
         <Link className="brand-link" to="/">
-          <span className="brand-mark">S</span>
+          <img
+            alt=""
+            aria-hidden="true"
+            className="brand-mark brand-mark--image"
+            height="32"
+            src={scriptyIcon}
+            width="32"
+          />
           <span>Scripty</span>
         </Link>
         <div className="workspace__header-actions">

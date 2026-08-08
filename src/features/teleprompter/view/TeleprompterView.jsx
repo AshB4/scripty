@@ -7,87 +7,44 @@ import {
   Maximize2,
   Settings,
 } from 'lucide-react'
-import Button from '../../components/Button.jsx'
-import Modal from '../../components/Modal.jsx'
-import IconButton from '../../components/IconButton.jsx'
-import scriptyIcon from '../../assets/scripty-icon-128.png'
-import { useLocalStorage } from '../../hooks/useLocalStorage.js'
-import SpeakerSettings from '../scripts/SpeakerSettings.jsx'
+import Button from '../../../components/Button.jsx'
+import Modal from '../../../components/Modal.jsx'
+import IconButton from '../../../components/IconButton.jsx'
+import scriptyIcon from '../../../assets/scripty-icon-128.png'
+import { useLocalStorage } from '../../../hooks/useLocalStorage.js'
+import SpeakerSettings from '../../scripts/SpeakerSettings.jsx'
 import {
   getSpeakers,
   normalizeSpeakerColors,
   parseScript,
+  resolveParserMode,
   speakerColorsAreEqual,
-} from '../scripts/scriptParser.js'
+} from '../../scripts/scriptParser.js'
 import {
   DEFAULT_SETTINGS,
   getFontStack,
   resolveSettings,
-} from '../scripts/scriptSettings.js'
-import FloatingTrackpad from './FloatingTrackpad.jsx'
+} from '../../scripts/scriptSettings.js'
+import FloatingTrackpad from '../controls/FloatingTrackpad.jsx'
+import PromptSegment from './PromptSegment.jsx'
 import {
   canStartTimedScroll,
   getModeControlEffects,
   SCROLL_MODES,
-} from './scrollMode.js'
-import TeleprompterControls from './TeleprompterControls.jsx'
-import { useTeleprompter } from './useTeleprompter.js'
-import { useVoiceFollow } from './useVoiceFollow.js'
-import VoiceFollowDiagnosticsPanel from './VoiceFollowDiagnosticsPanel.jsx'
+} from '../scrollMode.js'
+import TeleprompterControls from '../controls/TeleprompterControls.jsx'
+import { useTeleprompter } from '../hooks/useTeleprompter.js'
+import { useVoiceFollow } from '../voiceFollow/useVoiceFollow.js'
+import VoiceFollowDiagnosticsPanel from '../voiceFollow/VoiceFollowDiagnosticsPanel.jsx'
 import {
   getDiagnosticTime,
   logVoiceFollowDiagnostic,
-} from './voiceFollowDiagnostics.js'
-import { shouldRequestVoiceScroll } from './voiceFollowScroll.js'
-import { leaveTeleprompter } from './teleprompterNavigation.js'
+} from '../voiceFollow/voiceFollowDiagnostics.js'
+import { shouldRequestVoiceScroll } from '../voiceFollow/voiceFollowScroll.js'
+import { leaveTeleprompter } from '../teleprompterNavigation.js'
 import {
   createTrackableBlocks,
-  toVoiceWords,
-} from './voiceFollowMatcher.js'
-
-const promptBlockLabels = {
-  direction: 'Direction',
-  display: 'Display',
-  metadata: 'File metadata',
-  notice: 'Notice',
-  pause: 'Pause',
-  scene: 'Scene heading',
-  section: 'Section',
-  transition: 'Transition',
-}
-
-function getPromptBlockLabel(block) {
-  if (block.type === 'direction' && block.subtype === 'audio') return 'Audio cue'
-  if (block.type === 'direction' && block.subtype === 'visual') return 'Visual cue'
-  if (block.type === 'direction' && block.subtype === 'display-cue') {
-    return 'Display cue'
-  }
-  return promptBlockLabels[block.type] ?? 'Direction'
-}
-
-function renderDialogueProgress(text, matchedWordCount) {
-  let wordIndex = 0
-
-  return text.split(/(\s+)/).map((token, tokenIndex) => {
-    const tokenWordCount = toVoiceWords(token).length
-    const isSpoken =
-      tokenWordCount > 0 && wordIndex + tokenWordCount <= matchedWordCount
-    wordIndex += tokenWordCount
-
-    return (
-      <span
-        className={
-          tokenWordCount
-            ? `prompt-word prompt-word--${isSpoken ? 'spoken' : 'remaining'}`
-            : undefined
-        }
-        key={`${tokenIndex}-${token}`}
-      >
-        {token}
-      </span>
-    )
-  })
-}
+} from '../voiceFollow/voiceFollowMatcher.js'
 
 export default function TeleprompterView() {
   const navigate = useNavigate()
@@ -100,10 +57,21 @@ export default function TeleprompterView() {
     'scripty.speakerColors',
     {},
   )
+  const [scriptTypeOverride] = useLocalStorage(
+    'scripty.scriptTypeOverride',
+    'Auto',
+  )
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [scrollMode, setScrollMode] = useState(SCROLL_MODES.TIMED)
   const settings = resolveSettings(storedSettings)
-  const segments = useMemo(() => parseScript(script), [script])
+  const parserMode = useMemo(
+    () => resolveParserMode(script, scriptTypeOverride),
+    [script, scriptTypeOverride],
+  )
+  const segments = useMemo(
+    () => parseScript(script, { scriptType: parserMode }),
+    [parserMode, script],
+  )
   const speakers = useMemo(() => getSpeakers(segments), [segments])
   const normalizedSpeakerColors = useMemo(
     () => normalizeSpeakerColors(speakerColors, speakers),
@@ -133,7 +101,7 @@ export default function TeleprompterView() {
   const centerVoiceMatch = useCallback((match, timing = {}) => {
     const viewport = viewportRef.current
     const segment = segmentRefs.current[match.block.segmentIndex]
-    if (!viewport || !segment) return
+    if (!viewport || !segment) return false
     if (
       !shouldRequestVoiceScroll(
         pendingVoiceScrollBlockRef.current,
@@ -144,7 +112,7 @@ export default function TeleprompterView() {
         reason: 'same-pending-block',
         selectedBlock: match.index,
       })
-      return
+      return false
     }
 
     const scrollStartedAt = getDiagnosticTime()
@@ -216,6 +184,7 @@ export default function TeleprompterView() {
     voiceScrollTimerRef.current = window.setTimeout(() => {
       finishVoiceScroll('fallback')
     }, 700)
+    return true
   }, [])
 
   const voiceFollow = useVoiceFollow({
@@ -238,6 +207,25 @@ export default function TeleprompterView() {
     trackableBlocks[voiceFollow.currentBlockIndex]?.segmentIndex ?? 0
   const setCurrentVoiceBlock = voiceFollow.setCurrentBlockIndex
   const isTimedActive = isPlaying || countdownValue !== null
+  const setSegmentElement = useCallback((segmentIndex, element) => {
+    segmentRefs.current[segmentIndex] = element
+  }, [])
+  const structuralPromptSegments = useMemo(
+    () =>
+      segments.map((segment, segmentIndex) =>
+        (segment.type ?? 'dialogue') === 'dialogue' ? null : (
+          <PromptSegment
+            key={segment.id}
+            matchedWordCount={null}
+            segment={segment}
+            segmentIndex={segmentIndex}
+            setSegmentElement={setSegmentElement}
+            totalWordCount={0}
+          />
+        ),
+      ),
+    [segments, setSegmentElement],
+  )
 
   useEffect(() => {
     const timing = voiceFollow.wordProgressTiming
@@ -453,66 +441,37 @@ export default function TeleprompterView() {
         >
           {segments.length ? (
             segments.map((segment, segmentIndex) => {
-              const blockType = segment.type ?? 'dialogue'
-              const isDialogue = blockType === 'dialogue'
               const voiceBlockIndex = voiceBlockIndexes.get(segmentIndex)
-              const isActive =
-                isDialogue && segmentIndex === activeSegmentIndex
-              const isSpoken =
-                isDialogue && voiceBlockIndex < voiceFollow.currentBlockIndex
-              const isUpcoming =
-                isDialogue && voiceBlockIndex > voiceFollow.currentBlockIndex
+              const isDialogue = (segment.type ?? 'dialogue') === 'dialogue'
+              let voiceState
+
+              if (!isDialogue) return structuralPromptSegments[segmentIndex]
+
+              if (segmentIndex === activeSegmentIndex) {
+                voiceState = 'current'
+              } else if (voiceBlockIndex < voiceFollow.currentBlockIndex) {
+                voiceState = 'spoken'
+              } else if (voiceBlockIndex > voiceFollow.currentBlockIndex) {
+                voiceState = 'upcoming'
+              }
 
               return (
-                <article
-                  className={`prompt-segment prompt-segment--${blockType} ${
-                    isActive ? 'prompt-segment--active' : ''
-                  } ${isSpoken ? 'prompt-segment--spoken' : ''} ${
-                    isUpcoming ? 'prompt-segment--upcoming' : ''
-                  }`}
-                  aria-current={isActive ? 'true' : undefined}
-                  data-voice-state={
-                    isActive
-                      ? 'current'
-                      : isSpoken
-                        ? 'spoken'
-                        : isUpcoming
-                          ? 'upcoming'
-                          : undefined
-                  }
-                  data-word-progress={
-                    isActive && voiceFollow.isEnabled
-                      ? `${voiceFollow.matchedWordCount}/${voiceFollow.totalWordCount}`
-                      : undefined
-                  }
+                <PromptSegment
                   key={segment.id}
-                  ref={(element) => {
-                    segmentRefs.current[segmentIndex] = element
-                  }}
-                  style={
-                    isDialogue
-                      ? {
-                          '--speaker-color':
-                            normalizedSpeakerColors[segment.speakerId] ??
-                            segment.color,
-                        }
-                      : undefined
+                  matchedWordCount={
+                    voiceState === 'current' && voiceFollow.isEnabled
+                      ? voiceFollow.matchedWordCount
+                      : null
                   }
-                >
-                  <span>
-                    {isDialogue
-                      ? segment.speakerLabel
-                      : getPromptBlockLabel(segment)}
-                  </span>
-                  <p>
-                    {isActive && voiceFollow.isEnabled
-                      ? renderDialogueProgress(
-                          segment.text,
-                          voiceFollow.matchedWordCount,
-                        )
-                      : segment.text}
-                  </p>
-                </article>
+                  segment={segment}
+                  segmentIndex={segmentIndex}
+                  setSegmentElement={setSegmentElement}
+                  speakerColor={normalizedSpeakerColors[segment.speakerId]}
+                  totalWordCount={
+                    voiceState === 'current' ? voiceFollow.totalWordCount : 0
+                  }
+                  voiceState={voiceState}
+                />
               )
             })
           ) : (

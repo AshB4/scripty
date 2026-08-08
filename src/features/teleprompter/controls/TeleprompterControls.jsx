@@ -7,11 +7,11 @@ import {
   Pause,
   Play,
 } from 'lucide-react'
-import IconButton from '../../components/IconButton.jsx'
+import IconButton from '../../../components/IconButton.jsx'
 import {
   getPrimaryControlState,
   SCROLL_MODES,
-} from './scrollMode.js'
+} from '../scrollMode.js'
 
 export default function TeleprompterControls({
   controls,

@@ -3,11 +3,11 @@ import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 
 const controlsSource = await readFile(
-  new URL('./TeleprompterControls.jsx', import.meta.url),
+  new URL('../controls/TeleprompterControls.jsx', import.meta.url),
   'utf8',
 )
 const viewSource = await readFile(
-  new URL('./TeleprompterView.jsx', import.meta.url),
+  new URL('../view/TeleprompterView.jsx', import.meta.url),
   'utf8',
 )
 

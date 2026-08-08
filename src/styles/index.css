@@ -1422,6 +1422,16 @@ svg {
   overflow-y: auto;
 }
 
+.voice-diagnostics__summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 6px 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+}
+
 .voice-diagnostics__events article {
   padding: 9px 12px;
   border-bottom: 1px solid rgba(148, 163, 184, 0.12);

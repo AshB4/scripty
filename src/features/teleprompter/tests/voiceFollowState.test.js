@@ -6,7 +6,7 @@ import {
   LOST_RESULT_LIMIT,
   MOVEMENT_COOLDOWN_MS,
   resolveVoiceMatchState,
-} from './voiceFollowState.js'
+} from '../voiceFollow/voiceFollowState.js'
 
 const confidentMatch = {
   index: 2,
@@ -154,6 +154,19 @@ test('keeps position and becomes Lost after repeated weak results', () => {
   assert.equal(state.nextIndex, 3)
   assert.equal(state.shouldMove, false)
   assert.equal(state.status, 'Lost')
+})
+
+test('a confident current dialogue recovers immediately from Lost', () => {
+  const recovered = resolveVoiceMatchState({
+    currentIndex: 0,
+    lowConfidenceCount: LOST_RESULT_LIMIT,
+    match: { index: 0, isConfident: true },
+    pendingMatch: { count: 0, index: null },
+  })
+
+  assert.equal(recovered.status, 'Following')
+  assert.equal(recovered.lowConfidenceCount, 0)
+  assert.equal(recovered.shouldMove, false)
 })
 
 test('maps permission, microphone, waiting, and network errors safely', () => {

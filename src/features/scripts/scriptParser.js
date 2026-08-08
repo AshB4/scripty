@@ -15,14 +15,15 @@ const noticePattern =
 const metadataPattern =
   /^(?:FILE|CASE|DOCUMENT|DOC|RECORD|ID|DATE|VERSION|DRAFT|REVISION|SLUG|AUTHOR|PUBLISHED|UPDATED|ISBN|ATTENDEES?|AGENDA|ACTION\s+ITEMS?|DECISIONS?)\s*:/i
 const sceneHeadingPattern = /^(?:INT\.|EXT\.|INT\/EXT\.|I\/E\.)\s*/i
+const stageSceneHeadingPattern = /^SCENE\b/i
 const transitionPattern =
-  /^(?:FADE\s+(?:IN|OUT)|CUT\s+TO|DISSOLVE\s+TO|SMASH\s+CUT\s+TO|MATCH\s+CUT\s+TO|WIPE\s+TO|BACK\s+TO|END\s+CREDITS)(?::|\.)?$/i
+  /^(?:FADE\s+(?:IN|OUT)|CUT\s+TO|DISSOLVE\s+TO|SMASH\s+CUT\s+TO|MATCH\s+CUT\s+TO|WIPE\s+TO|BACK\s+TO|BLACKOUT|END\s+CREDITS)(?::|\.)?$/i
 const displayHeadingPattern =
   /^(?:EPISODE|TITLE|TITLE\s+CARD|SUPER|ON\s+SCREEN|CHYRON|LOWER\s+THIRD)\b/i
 const sectionHeadingPattern =
-  /^(?:SECTION|CHAPTER|ACT|PART|FIELD\s+EDITION|BEST\s+PRACTICE|POST[- ]ACTION\s+REVIEW|INTRODUCTION|CONCLUSION|OVERVIEW|SUMMARY|APPENDIX|ABSTRACT|METHODS?|METHODOLOGY|RESULTS|REFERENCES|PROFESSIONAL\s+SUMMARY|WORK\s+EXPERIENCE|EMPLOYMENT\s+EXPERIENCE|EDUCATION|SKILLS|CERTIFICATIONS|QUALIFICATIONS|PROLOGUE|EPILOGUE|DEDICATION)\b/i
+  /^(?:SECTION|CHAPTER|ACT|SCENE|PART|FIELD\s+EDITION|BEST\s+PRACTICE|POST[- ]ACTION\s+REVIEW|INTRODUCTION|CONCLUSION|OVERVIEW|SUMMARY|APPENDIX|ABSTRACT|METHODS?|METHODOLOGY|RESULTS|REFERENCES|PROFESSIONAL\s+SUMMARY|WORK\s+EXPERIENCE|EMPLOYMENT\s+EXPERIENCE|EDUCATION|SKILLS|CERTIFICATIONS|QUALIFICATIONS|PROLOGUE|EPILOGUE|DEDICATION)\b/i
 const structuralLabelPattern =
-  /^(?:FILE|CASE|DOCUMENT|DOC|RECORD|ID|DATE|VERSION|DRAFT|REVISION|SLUG|AUTHOR|PUBLISHED|UPDATED|ISBN|ATTENDEES?|AGENDA|ACTION\s+ITEMS?|DECISIONS?|EPISODE|TITLE|SECTION|CHAPTER|ACT|PART|FIELD\s+EDITION|BEST\s+PRACTICE|POST[- ]ACTION\s+REVIEW|ABSTRACT|METHODS?|METHODOLOGY|RESULTS|REFERENCES|PROFESSIONAL\s+SUMMARY|WORK\s+EXPERIENCE|EMPLOYMENT\s+EXPERIENCE|EDUCATION|SKILLS|CERTIFICATIONS|QUALIFICATIONS|PROLOGUE|EPILOGUE|DEDICATION)\b/i
+  /^(?:FILE|CASE|DOCUMENT|DOC|RECORD|ID|DATE|VERSION|DRAFT|REVISION|SLUG|AUTHOR|PUBLISHED|UPDATED|ISBN|ATTENDEES?|AGENDA|ACTION\s+ITEMS?|DECISIONS?|EPISODE|TITLE|SECTION|CHAPTER|ACT|SCENE|PART|FIELD\s+EDITION|BEST\s+PRACTICE|POST[- ]ACTION\s+REVIEW|ABSTRACT|METHODS?|METHODOLOGY|RESULTS|REFERENCES|PROFESSIONAL\s+SUMMARY|WORK\s+EXPERIENCE|EMPLOYMENT\s+EXPERIENCE|EDUCATION|SKILLS|CERTIFICATIONS|QUALIFICATIONS|PROLOGUE|EPILOGUE|DEDICATION)\b/i
 const commonRolePattern =
   /^(?:NARRATOR|HOST|GUEST|EDITOR|INTERVIEWER|REPORTER|ANNOUNCER|MODERATOR|VOICE|V\.O\.|SPEAKER)(?:\s+\d+)?$/i
 
@@ -96,6 +97,7 @@ function isStrongNonSpeaker(value) {
     noticePattern.test(value) ||
     metadataPattern.test(value) ||
     sceneHeadingPattern.test(value) ||
+    stageSceneHeadingPattern.test(value) ||
     transitionPattern.test(value) ||
     displayHeadingPattern.test(value) ||
     sectionHeadingPattern.test(value) ||
@@ -251,16 +253,44 @@ function createBlock(blocks, type, text, metadata = {}) {
   })
 }
 
-export function parseScript(rawScript) {
+export function resolveParserMode(rawScript, requestedType = 'Auto') {
+  if (requestedType === 'Screenplay' || requestedType === 'Stage play') {
+    return requestedType
+  }
+
+  if (requestedType !== 'Auto') return requestedType
+
+  const text = String(rawScript ?? '')
+  const lines = text.split(/\r?\n/).map((line) => line.trim())
+  if (lines.some((line) => sceneHeadingPattern.test(line))) return 'Screenplay'
+
+  const hasActOrScene = lines.some((line) => /^(?:ACT|SCENE)\b/i.test(line))
+  const hasParenthetical = lines.some(isParenthetical)
+  return hasActOrScene && hasParenthetical ? 'Stage play' : 'Auto'
+}
+
+export function isSpeakableBlock(block) {
+  return !block.type || block.type === 'dialogue'
+}
+
+export function getSpeakableBlocks(blocks) {
+  return blocks.filter(isSpeakableBlock)
+}
+
+export function parseScript(rawScript, { scriptType = 'Auto' } = {}) {
   const lines = String(rawScript ?? '')
     .split(/\r?\n/)
     .map((raw) => ({ raw, text: raw.trim() }))
+  const parserMode = resolveParserMode(rawScript, scriptType)
+  const usesCharacterDialogueBoundaries =
+    parserMode === 'Screenplay' || parserMode === 'Stage play'
   const knownSpeakerIds = collectKnownSpeakerIds(lines)
   const blocks = []
   const speakerLabels = new Map()
   const speakerOrder = new Map()
   let currentSpeaker = normalizeSpeaker('Narrator')
   let currentText = []
+  let isCharacterDialogueOpen = false
 
   const rememberSpeaker = (speaker) => {
     if (!speakerLabels.has(speaker.id)) {
@@ -298,11 +328,13 @@ export function parseScript(rawScript) {
 
     if (!text) {
       flushDialogue()
+      if (usesCharacterDialogueBoundaries) isCharacterDialogueOpen = false
       continue
     }
 
     if (noticePattern.test(text)) {
       flushDialogue()
+      if (usesCharacterDialogueBoundaries) isCharacterDialogueOpen = false
       const noticeLines = [text]
 
       while (index + 1 < lines.length && lines[index + 1].text) {
@@ -312,6 +344,7 @@ export function parseScript(rawScript) {
           isBracketed(nextText) ||
           isUppercaseLine(nextText) ||
           sceneHeadingPattern.test(nextText) ||
+          stageSceneHeadingPattern.test(nextText) ||
           transitionPattern.test(nextText) ||
           metadataPattern.test(nextText) ||
           detectSpeakerCue(lines, nextIndex, knownSpeakerIds)
@@ -329,6 +362,7 @@ export function parseScript(rawScript) {
 
     if (isBracketed(text)) {
       flushDialogue()
+      if (usesCharacterDialogueBoundaries) isCharacterDialogueOpen = false
       const classification = classifyBracketedCue(text)
       createBlock(blocks, classification.type, text, {
         subtype: classification.subtype,
@@ -336,20 +370,23 @@ export function parseScript(rawScript) {
       continue
     }
 
-    if (sceneHeadingPattern.test(text)) {
+    if (sceneHeadingPattern.test(text) || stageSceneHeadingPattern.test(text)) {
       flushDialogue()
+      if (usesCharacterDialogueBoundaries) isCharacterDialogueOpen = false
       createBlock(blocks, 'scene', text)
       continue
     }
 
     if (transitionPattern.test(text)) {
       flushDialogue()
+      if (usesCharacterDialogueBoundaries) isCharacterDialogueOpen = false
       createBlock(blocks, 'transition', text)
       continue
     }
 
     if (metadataPattern.test(text)) {
       flushDialogue()
+      if (usesCharacterDialogueBoundaries) isCharacterDialogueOpen = false
       createBlock(blocks, 'metadata', text)
       continue
     }
@@ -358,6 +395,7 @@ export function parseScript(rawScript) {
     if (speakerCue) {
       flushDialogue()
       currentSpeaker = rememberSpeaker(speakerCue.speaker)
+      isCharacterDialogueOpen = true
       if (speakerCue.dialogue) currentText.push(speakerCue.dialogue)
       continue
     }
@@ -370,7 +408,14 @@ export function parseScript(rawScript) {
 
     if (isUppercaseLine(text)) {
       flushDialogue()
+      if (usesCharacterDialogueBoundaries) isCharacterDialogueOpen = false
       createBlock(blocks, classifyUppercaseBlock(lines, index), text)
+      continue
+    }
+
+    if (usesCharacterDialogueBoundaries && !isCharacterDialogueOpen) {
+      flushDialogue()
+      createBlock(blocks, 'direction', text, { subtype: 'action' })
       continue
     }
 
@@ -485,7 +530,7 @@ function detectDocumentType(blocks, spokenWords, rawScript) {
   return null
 }
 
-function detectProductionFormat(counts, speakers) {
+function detectProductionFormat(counts, speakers, inferredParserMode = 'Auto') {
   const structuralCount =
     counts.direction +
     counts.display +
@@ -495,6 +540,26 @@ function detectProductionFormat(counts, speakers) {
   const hasCast = speakers.length >= 2
   const strongMatches = []
   const partialMatches = []
+
+  if (inferredParserMode === 'Screenplay' && counts.dialogue >= 1) {
+    return {
+      confidence: 'High',
+      reason: 'Scene-heading and character-dialogue structure',
+      scriptType: 'Screenplay',
+    }
+  }
+
+  if (
+    inferredParserMode === 'Stage play' &&
+    hasCast &&
+    counts.dialogue >= 2
+  ) {
+    return {
+      confidence: 'High',
+      reason: 'Act or scene headings with character dialogue and directions',
+      scriptType: 'Stage play',
+    }
+  }
 
   if (counts.scene >= 2 || (counts.scene >= 1 && counts.transition >= 1)) {
     strongMatches.push('Screenplay')
@@ -546,17 +611,32 @@ function detectProductionFormat(counts, speakers) {
   }
 
   if (strongMatches.length === 1) {
-    return { confidence: 'High', scriptType: strongMatches[0] }
+    return {
+      confidence: 'High',
+      reason: `Strong ${strongMatches[0].toLowerCase()} structure`,
+      scriptType: strongMatches[0],
+    }
   }
 
   if (strongMatches.length === 0 && partialMatches.length === 1) {
-    return { confidence: 'Medium', scriptType: partialMatches[0] }
+    return {
+      confidence: 'Medium',
+      reason: `Some ${partialMatches[0].toLowerCase()} structure`,
+      scriptType: partialMatches[0],
+    }
   }
 
-  return { confidence: 'Low', scriptType: 'Generic Teleprompter' }
+  return {
+    confidence: 'Low',
+    reason:
+      strongMatches.length > 1 || partialMatches.length > 1
+        ? `Mixed production signals: ${[...strongMatches, ...partialMatches].join(', ')}`
+        : 'Limited production-script structure',
+    scriptType: 'Generic Teleprompter',
+  }
 }
 
-export function analyzeScript(blocks, rawScript = '') {
+export function analyzeScript(blocks, rawScript = '', options = {}) {
   const speakers = getSpeakers(blocks)
   const counts = blocks.reduce(
     (totals, block) => {
@@ -577,21 +657,34 @@ export function analyzeScript(blocks, rawScript = '') {
   )
   const spokenWords = countWords(blocks)
   const documentType = detectDocumentType(blocks, spokenWords, rawScript)
+  const inferredParserMode = resolveParserMode(rawScript, 'Auto')
   const detection = documentType
-    ? { confidence: 'Low', scriptType: 'Generic Teleprompter' }
-    : detectProductionFormat(counts, speakers)
+    ? {
+        confidence: 'Low',
+        reason: `Document signals resemble a ${documentType.toLowerCase()}`,
+        scriptType: 'Generic Teleprompter',
+      }
+    : detectProductionFormat(counts, speakers, inferredParserMode)
+  const blockTypes = Object.fromEntries(
+    Object.entries(counts).filter(([, count]) => count > 0),
+  )
 
   return {
     ...counts,
+    blockTypes,
     confidence: detection.confidence,
+    detectionReason: detection.reason,
     documentType,
     direction: counts.direction + counts.pause,
     displayAndSection: counts.display + counts.section,
     estimatedMinutes: spokenWords
       ? Math.max(1, Math.round(spokenWords / 140))
       : 0,
+    parsedBlockCount: blocks.length,
+    parserMode: options.parserMode ?? 'Auto',
     scriptType: detection.scriptType,
     speakerCount: speakers.length,
+    speakableBlockCount: getSpeakableBlocks(blocks).length,
     wordCount: spokenWords,
   }
 }

@@ -4,18 +4,18 @@ import {
   findVoiceMatch,
   getOrderedPrefixProgress,
   toVoiceWords,
-} from './voiceFollowMatcher.js'
-import { resolveVoiceMatchState } from './voiceFollowState.js'
+} from '../voiceFollow/voiceFollowMatcher.js'
+import { resolveVoiceMatchState } from '../voiceFollow/voiceFollowState.js'
 import {
   createCleanBlockTrackingState,
   getSameEventCarryoverWords,
   isBlockProgressComplete,
-} from './voiceFollowTracking.js'
+} from '../voiceFollow/voiceFollowTracking.js'
 import {
   clearRecognitionTranscript,
   createRecognitionSessionState,
   processRecognitionEvent,
-} from './voiceRecognitionResults.js'
+} from '../voiceFollow/voiceRecognitionResults.js'
 
 const lineTexts = [
   'Welcome to Scripty.',

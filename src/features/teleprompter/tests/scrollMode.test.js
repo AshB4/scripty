@@ -5,7 +5,7 @@ import {
   getModeControlEffects,
   getPrimaryControlState,
   SCROLL_MODES,
-} from './scrollMode.js'
+} from '../scrollMode.js'
 
 test('Timed Scroll and Voice Follow cannot be active simultaneously', () => {
   assert.equal(canStartTimedScroll(SCROLL_MODES.TIMED, false), true)

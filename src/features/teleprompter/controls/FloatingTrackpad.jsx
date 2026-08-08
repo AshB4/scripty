@@ -1,6 +1,6 @@
 import { ChevronsUpDown, Mic2, MicOff, Pause, Play } from 'lucide-react'
 import { useRef, useState } from 'react'
-import { getPrimaryControlState } from './scrollMode.js'
+import { getPrimaryControlState } from '../scrollMode.js'
 
 const clampSpeed = (speed) => Math.min(140, Math.max(20, Math.round(speed)))
 

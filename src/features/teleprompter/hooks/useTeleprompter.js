@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useKeyboardControls } from '../../hooks/useKeyboardControls.js'
+import { useKeyboardControls } from '../../../hooks/useKeyboardControls.js'
 import {
   advanceTimedViewport,
   MANUAL_SCROLL_DISTANCE,
   moveViewport,
   scrollViewportToTop,
-} from './teleprompterNavigation.js'
+} from '../teleprompterNavigation.js'
 
 export function useTeleprompter({
   countdownEnabled = false,
