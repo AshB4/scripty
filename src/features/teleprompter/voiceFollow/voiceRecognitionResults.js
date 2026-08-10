@@ -26,6 +26,12 @@ export function processRecognitionEvent({ event, sessionState }) {
   const eventFinalWords = []
   const interimWords = []
   const interimSignatures = []
+  const evidenceCandidates = []
+  const previousInterimSignatures = new Set(
+    sessionState.lastInterimSignature
+      ? sessionState.lastInterimSignature.split('|')
+      : [],
+  )
   const resultKinds = new Set()
   const firstChangedResult = Math.max(0, event.resultIndex ?? 0)
   let transcriptCharacterCount = 0
@@ -46,21 +52,38 @@ export function processRecognitionEvent({ event, sessionState }) {
       if (index > highestProcessedFinalResultIndex) {
         highestProcessedFinalResultIndex = index
         finalWords.push(...words)
-        changedWords.push(...words)
         eventFinalWords.push(...words)
+        evidenceCandidates.push({
+          isFinal: true,
+          resultIndex: index,
+          words: words.slice(-ROLLING_TRANSCRIPT_WORDS),
+        })
       }
     } else {
       resultKinds.add('interim')
       interimWords.push(...words)
       interimSignatures.push(`${index}:${words.join(' ')}`)
+      const signature = `${index}:${words.join(' ')}`
+      evidenceCandidates.push({
+        isFinal: false,
+        resultIndex: index,
+        signature,
+        words: words.slice(-ROLLING_TRANSCRIPT_WORDS),
+      })
     }
   }
 
   const interimSignature = interimSignatures.join('|')
-  const interimChanged = interimSignature !== sessionState.lastInterimSignature
-  if (interimChanged) changedWords.push(...interimWords)
-  const isDuplicateRevision =
-    eventFinalWords.length === 0 && (!interimWords.length || !interimChanged)
+  const orderedEvidence = evidenceCandidates.filter(
+    (evidence) =>
+      evidence.isFinal || !previousInterimSignatures.has(evidence.signature),
+  ).map((evidence) => ({
+    isFinal: evidence.isFinal,
+    resultIndex: evidence.resultIndex,
+    words: evidence.words,
+  }))
+  orderedEvidence.forEach((evidence) => changedWords.push(...evidence.words))
+  const isDuplicateRevision = orderedEvidence.length === 0
 
   return {
     changedWords: changedWords.slice(-ROLLING_TRANSCRIPT_WORDS),
@@ -68,6 +91,7 @@ export function processRecognitionEvent({ event, sessionState }) {
     finalWordCount: Math.min(finalWords.length, ROLLING_TRANSCRIPT_WORDS),
     interimWords: interimWords.slice(-ROLLING_TRANSCRIPT_WORDS),
     isDuplicateRevision,
+    orderedEvidence,
     receivedSpeech: changedWords.length > 0,
     resultKind: [...resultKinds].join('+'),
     rollingWords: [...finalWords, ...interimWords].slice(

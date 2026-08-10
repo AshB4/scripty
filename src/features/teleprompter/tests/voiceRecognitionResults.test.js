@@ -101,6 +101,77 @@ test('aggregates multiple changed results into one recognition update', () => {
   assert.deepEqual(update.interimWords, ['interim', 'words'])
   assert.equal(update.finalWordCount, 2)
   assert.equal(update.rollingWordCount, 4)
+  assert.deepEqual(update.orderedEvidence, [
+    {
+      isFinal: true,
+      resultIndex: 0,
+      words: ['finished', 'words'],
+    },
+    {
+      isFinal: false,
+      resultIndex: 1,
+      words: ['interim', 'words'],
+    },
+  ])
+})
+
+test('ordered evidence includes only changed interim result boundaries', () => {
+  const first = processRecognitionEvent({
+    event: {
+      resultIndex: 0,
+      results: [
+        recognitionResult('first interim'),
+        recognitionResult('second interim'),
+      ],
+    },
+    sessionState: createRecognitionSessionState(),
+  })
+  const revised = processRecognitionEvent({
+    event: {
+      resultIndex: 1,
+      results: [
+        recognitionResult('first interim'),
+        recognitionResult('second interim expanded'),
+      ],
+    },
+    sessionState: first.sessionState,
+  })
+
+  assert.deepEqual(revised.orderedEvidence, [
+    {
+      isFinal: false,
+      resultIndex: 1,
+      words: ['second', 'interim', 'expanded'],
+    },
+  ])
+})
+
+test('an unchanged interim stays suppressed when resultIndex advances', () => {
+  const first = processRecognitionEvent({
+    event: {
+      resultIndex: 0,
+      results: [
+        recognitionResult('first interim'),
+        recognitionResult('second interim'),
+      ],
+    },
+    sessionState: createRecognitionSessionState(),
+  })
+  const unchanged = processRecognitionEvent({
+    event: {
+      resultIndex: 1,
+      results: [
+        recognitionResult('first interim'),
+        recognitionResult('second interim'),
+      ],
+    },
+    sessionState: first.sessionState,
+  })
+
+  assert.equal(unchanged.receivedSpeech, false)
+  assert.equal(unchanged.isDuplicateRevision, true)
+  assert.deepEqual(unchanged.changedWords, [])
+  assert.deepEqual(unchanged.orderedEvidence, [])
 })
 
 test('final transcript storage remains bounded and can be retired per block', () => {

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
 	findVoiceMatch,
 	getOrderedPrefixProgress,
+	ROLLING_TRANSCRIPT_WORDS,
 } from "../voiceFollow/voiceFollowMatcher.js";
 import {
 	canScheduleRecognitionRestart,
@@ -14,6 +15,7 @@ import {
 	createCleanBlockTrackingState,
 	EMPTY_PENDING_MATCH,
 	isBlockProgressComplete,
+	resolveIdenticalBlockOccurrence,
 } from "./voiceFollowTracking.js";
 import {
 	getDiagnosticTime,
@@ -62,6 +64,7 @@ export function useVoiceFollow({ blocks, onPositionChange }) {
 	}));
 	const blocksRef = useRef(blocks);
 	const currentBlockIndexRef = useRef(0);
+	const completedOccurrenceRef = useRef(null);
 	const enabledRef = useRef(false);
 	const diagnosticEventsRef = useRef([]);
 	const diagnosticRefreshTimerRef = useRef(null);
@@ -160,6 +163,7 @@ export function useVoiceFollow({ blocks, onPositionChange }) {
 			});
 			pendingMatchRef.current = cleanState.pendingMatch;
 			lowConfidenceCountRef.current = cleanState.lowConfidenceCount;
+			completedOccurrenceRef.current = null;
 			resetWordProgress(blockIndex);
 			return cleanState;
 		},
@@ -220,10 +224,21 @@ export function useVoiceFollow({ blocks, onPositionChange }) {
 
 			const matchStartedAt = getDiagnosticTime();
 			const currentIndex = currentBlockIndexRef.current;
-			const match = findVoiceMatch({
+			let match = findVoiceMatch({
 				blocks: blocksRef.current,
 				currentIndex,
 				transcript: transcriptWords,
+			});
+			match = resolveIdenticalBlockOccurrence({
+				blocks: blocksRef.current,
+				completedOccurrence: completedOccurrenceRef.current,
+				currentIndex,
+				evidence: diagnosticContext.evidence,
+				match,
+				matchedWordCount:
+					progressBlockIndexRef.current === currentIndex
+						? matchedWordCountRef.current
+						: 0,
 			});
 			const matchLatencyMs = getDiagnosticTime() - matchStartedAt;
 			const decisionAt = Date.now();
@@ -330,6 +345,12 @@ export function useVoiceFollow({ blocks, onPositionChange }) {
 			if (justCompletedBlock) {
 				pendingMatchRef.current = { ...EMPTY_PENDING_MATCH };
 				lowConfidenceCountRef.current = 0;
+				if (diagnosticContext.evidence) {
+					completedOccurrenceRef.current = {
+						blockIndex: activeIndex,
+						...diagnosticContext.evidence,
+					};
+				}
 			}
 
 			recordDiagnosticEvent({
@@ -357,6 +378,8 @@ export function useVoiceFollow({ blocks, onPositionChange }) {
 			});
 
 			return {
+				completedBlock,
+				didMove: nextState.shouldMove,
 				matchLatencyMs: Number(matchLatencyMs.toFixed(2)),
 			};
 		},
@@ -371,6 +394,9 @@ export function useVoiceFollow({ blocks, onPositionChange }) {
 	const processRecognitionResult = useCallback(
 		(event) => {
 			const receivedAt = getDiagnosticTime();
+			const previousFinalWords = [
+				...recognitionSessionRef.current.finalWords,
+			];
 			const processedResult = processRecognitionEvent({
 				event,
 				sessionState: recognitionSessionRef.current,
@@ -378,25 +404,73 @@ export function useVoiceFollow({ blocks, onPositionChange }) {
 			recognitionSessionRef.current = processedResult.sessionState;
 			eventNumberRef.current += 1;
 
-			const transcriptOutcome = processedResult.receivedSpeech
-				? handleTranscript(processedResult.rollingWords, {
-						eventNumber: eventNumberRef.current,
-						finalWordCount: processedResult.finalWordCount,
-						finalWords: processedResult.eventFinalWords,
-						interimWords: processedResult.interimWords,
-						progressWords: processedResult.changedWords,
-						receivedAt,
-						resultKind: processedResult.resultKind,
-						rollingWordCount: processedResult.rollingWordCount,
-						sessionId: recognitionSessionIdRef.current,
-						transcriptCharacterCount: processedResult.transcriptCharacterCount,
-					})
-				: null;
+			let transcriptOutcomes = [];
+			if (processedResult.receivedSpeech) {
+				const evidence = processedResult.orderedEvidence;
+
+				if (evidence.length <= 1) {
+					const item = evidence[0];
+					transcriptOutcomes = [
+						handleTranscript(processedResult.rollingWords, {
+							evidence: item
+								? {
+										resultIndex: item.resultIndex,
+										sessionId: recognitionSessionIdRef.current,
+									}
+								: null,
+							eventNumber: eventNumberRef.current,
+							finalWordCount: processedResult.finalWordCount,
+							finalWords: processedResult.eventFinalWords,
+							interimWords: processedResult.interimWords,
+							progressWords: processedResult.changedWords,
+							receivedAt,
+							resultKind: processedResult.resultKind,
+							rollingWordCount: processedResult.rollingWordCount,
+							sessionId: recognitionSessionIdRef.current,
+							transcriptCharacterCount:
+								processedResult.transcriptCharacterCount,
+						}),
+					];
+				} else {
+					let sequentialWords = previousFinalWords;
+
+					transcriptOutcomes = evidence.map((item) => {
+						sequentialWords = [...sequentialWords, ...item.words].slice(
+							-ROLLING_TRANSCRIPT_WORDS,
+						);
+						const outcome = handleTranscript(sequentialWords, {
+							evidence: {
+								resultIndex: item.resultIndex,
+								sessionId: recognitionSessionIdRef.current,
+							},
+							eventNumber: eventNumberRef.current,
+							finalWordCount: item.isFinal ? item.words.length : 0,
+							finalWords: item.isFinal ? item.words : [],
+							interimWords: item.isFinal ? [] : item.words,
+							progressWords: item.words,
+							receivedAt,
+							resultKind: item.isFinal ? "final" : "interim",
+							rollingWordCount: sequentialWords.length,
+							sessionId: recognitionSessionIdRef.current,
+							transcriptCharacterCount: item.words.join(" ").length,
+						});
+
+						if (outcome.completedBlock || outcome.didMove) {
+							sequentialWords = [];
+						}
+
+						return outcome;
+					});
+				}
+			}
 			const eventProcessingMs = getDiagnosticTime() - receivedAt;
 			recordRecognitionEventMetric(metricsRef.current, {
 				eventProcessingMs,
 				isDuplicateRevision: processedResult.isDuplicateRevision,
-				matcherMs: transcriptOutcome?.matchLatencyMs ?? 0,
+				matcherMs: transcriptOutcomes.reduce(
+					(total, outcome) => total + outcome.matchLatencyMs,
+					0,
+				),
 				resultKind: processedResult.resultKind,
 				transcriptCharacterCount: processedResult.transcriptCharacterCount,
 			});

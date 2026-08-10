@@ -8,7 +8,7 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "node --test src/features/scripts/branding.test.js src/features/scripts/scriptImport.test.js src/features/scripts/scriptParser.test.js src/features/teleprompter/tests/progressiveText.test.js src/features/teleprompter/tests/scrollMode.test.js src/features/teleprompter/tests/teleprompterNavigation.test.js src/features/teleprompter/tests/teleprompterToolbar.test.js src/features/teleprompter/tests/voiceFollowMatcher.test.js src/features/teleprompter/tests/voiceFollowMetrics.test.js src/features/teleprompter/tests/voiceFollowScroll.test.js src/features/teleprompter/tests/voiceFollowState.test.js src/features/teleprompter/tests/voiceFollowTracking.test.js src/features/teleprompter/tests/voiceRecognitionResults.test.js"
+    "test": "node --test src/features/scripts/branding.test.js src/features/scripts/scriptImport.test.js src/features/scripts/scriptParser.test.js src/features/teleprompter/tests/progressiveText.test.js src/features/teleprompter/tests/scrollMode.test.js src/features/teleprompter/tests/teleprompterNavigation.test.js src/features/teleprompter/tests/teleprompterToolbar.test.js src/features/teleprompter/tests/voiceFollowMatcher.test.js src/features/teleprompter/tests/voiceFollowMetrics.test.js src/features/teleprompter/tests/voiceFollowReplay.test.js src/features/teleprompter/tests/voiceFollowScroll.test.js src/features/teleprompter/tests/voiceFollowState.test.js src/features/teleprompter/tests/voiceFollowTracking.test.js src/features/teleprompter/tests/voiceRecognitionResults.test.js"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",

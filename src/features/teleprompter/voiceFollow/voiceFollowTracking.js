@@ -34,3 +34,69 @@ export function createCleanBlockTrackingState({
 export function isBlockProgressComplete(matchedWordCount, totalWordCount) {
   return totalWordCount > 0 && matchedWordCount >= totalWordCount
 }
+
+function hasSameWords(left = [], right = []) {
+  return (
+    left.length === right.length &&
+    left.every((word, index) => word === right[index])
+  )
+}
+
+function isLaterRecognitionEvidence(evidence, completedOccurrence) {
+  if (!evidence || !completedOccurrence) return false
+  if (evidence.sessionId !== completedOccurrence.sessionId) {
+    return evidence.sessionId > completedOccurrence.sessionId
+  }
+
+  return evidence.resultIndex > completedOccurrence.resultIndex
+}
+
+export function resolveIdenticalBlockOccurrence({
+  blocks,
+  completedOccurrence,
+  currentIndex,
+  evidence,
+  match,
+  matchedWordCount,
+}) {
+  const currentBlock = blocks[currentIndex]
+  const nextBlock = blocks[currentIndex + 1]
+
+  if (
+    !match?.isConfident ||
+    !currentBlock ||
+    matchedWordCount < currentBlock.words.length ||
+    completedOccurrence?.blockIndex !== currentIndex ||
+    !isLaterRecognitionEvidence(evidence, completedOccurrence)
+  ) {
+    return match
+  }
+
+  const previousBlock = blocks[currentIndex - 1]
+  if (
+    match.index === currentIndex - 1 &&
+    hasSameWords(previousBlock?.words, currentBlock.words)
+  ) {
+    return {
+      ...match,
+      block: currentBlock,
+      distance: 0,
+      index: currentIndex,
+    }
+  }
+
+  if (
+    match.index !== currentIndex ||
+    !nextBlock ||
+    !hasSameWords(currentBlock.words, nextBlock.words)
+  ) {
+    return match
+  }
+
+  return {
+    ...match,
+    block: nextBlock,
+    distance: 1,
+    index: currentIndex + 1,
+  }
+}
