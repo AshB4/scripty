@@ -1220,6 +1220,10 @@ svg {
   min-height: 42px;
 }
 
+.teleprompter__diagnostics-button {
+  min-height: 42px;
+}
+
 .teleprompter__viewport {
   position: absolute;
   inset: 73px 0 0;
@@ -1365,11 +1369,11 @@ svg {
 .voice-diagnostics {
   position: fixed;
   z-index: 35;
+  top: 88px;
   bottom: 16px;
   left: 16px;
-  width: min(460px, calc(100% - 32px));
-  max-height: min(52svh, 520px);
-  overflow: hidden;
+  width: min(340px, calc(100% - 32px));
+  overflow-y: auto;
   border: 1px solid rgba(56, 189, 248, 0.38);
   border-radius: 6px;
   background: rgba(5, 7, 10, 0.96);
@@ -1385,6 +1389,14 @@ svg {
   gap: 12px;
   padding: 10px 12px;
   border-bottom: 1px solid var(--border);
+}
+
+.voice-diagnostics > header button:last-child {
+  display: none;
+}
+
+.teleprompter--diagnostics-open .teleprompter__viewport {
+  left: min(372px, 34vw);
 }
 
 .voice-diagnostics > header div,
@@ -1865,6 +1877,13 @@ svg {
     font-size: 0.72rem;
   }
 
+  .teleprompter__diagnostics-button {
+    min-height: 38px;
+    padding-inline: 9px;
+    gap: 6px;
+    font-size: 0.72rem;
+  }
+
   .teleprompter__actions {
     display: grid;
     grid-template-columns: repeat(2, 38px);
@@ -1952,6 +1971,27 @@ svg {
 
   .teleprompter--focus .teleprompter__topbar:focus-within {
     opacity: 1;
+  }
+}
+
+@media (max-width: 900px) {
+  .teleprompter--diagnostics-open .teleprompter__viewport {
+    right: 0;
+    bottom: min(46svh, 390px);
+    left: 0;
+  }
+
+  .voice-diagnostics {
+    top: auto;
+    right: 12px;
+    bottom: 12px;
+    left: 12px;
+    width: auto;
+    max-height: min(44svh, 378px);
+  }
+
+  .voice-diagnostics > header button:last-child {
+    display: inline-flex;
   }
 }
 

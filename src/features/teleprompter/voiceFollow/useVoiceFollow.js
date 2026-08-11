@@ -35,6 +35,7 @@ import {
 	createRecognitionSessionState,
 	processRecognitionEvent,
 } from "./voiceRecognitionResults.js";
+import { mergeVoiceFollowTiming } from "./voiceFollowTimings.js";
 
 const WAITING_DELAY = 1500;
 const RESTART_DELAY = 250;
@@ -57,17 +58,20 @@ export function useVoiceFollow({ blocks, onPositionChange }) {
 	const [currentBlockIndex, setCurrentBlockIndexState] = useState(0);
 	const [matchedWordCount, setMatchedWordCount] = useState(0);
 	const [wordProgressTiming, setWordProgressTiming] = useState(null);
+	const [visibleUpdateTiming, setVisibleUpdateTiming] = useState(null);
 	const diagnosticsEnabled = voiceFollowDiagnosticsEnabled();
 	const metricsRef = useRef(createVoiceFollowMetrics());
 	const [diagnosticsSnapshot, setDiagnosticsSnapshot] = useState(() => ({
 		events: [],
 		summary: snapshotVoiceFollowMetrics(createVoiceFollowMetrics()),
+		timings: [],
 	}));
 	const blocksRef = useRef(blocks);
 	const currentBlockIndexRef = useRef(0);
 	const completedOccurrenceRef = useRef(null);
 	const enabledRef = useRef(false);
 	const diagnosticEventsRef = useRef([]);
+	const diagnosticTimingsRef = useRef([]);
 	const diagnosticRefreshTimerRef = useRef(null);
 	const eventNumberRef = useRef(0);
 	const recognitionRef = useRef(null);
@@ -93,6 +97,7 @@ export function useVoiceFollow({ blocks, onPositionChange }) {
 			diagnosticRefreshTimerRef.current = null;
 			setDiagnosticsSnapshot({
 				events: [...diagnosticEventsRef.current],
+				timings: [...diagnosticTimingsRef.current],
 				summary: snapshotVoiceFollowMetrics(metricsRef.current),
 			});
 		}, 250);
@@ -127,6 +132,35 @@ export function useVoiceFollow({ blocks, onPositionChange }) {
 			scheduleDiagnosticRefresh();
 		},
 		[diagnosticsEnabled, scheduleDiagnosticRefresh],
+	);
+
+	const recordVisibleTiming = useCallback(
+		(update) => {
+			if (!diagnosticsEnabled) return;
+			diagnosticTimingsRef.current = mergeVoiceFollowTiming(
+				diagnosticTimingsRef.current,
+				update,
+			);
+			scheduleDiagnosticRefresh();
+		},
+		[diagnosticsEnabled, scheduleDiagnosticRefresh],
+	);
+
+	const visibleUpdateIdRef = useRef(0);
+	const scheduleVisibleUpdateTiming = useCallback(
+		({ decisionAt, kind, recognitionReceivedAt }) => {
+			if (!diagnosticsEnabled) return null;
+			const timing = {
+				decisionAt,
+				id: ++visibleUpdateIdRef.current,
+				kind,
+				recognitionReceivedAt,
+			};
+			setVisibleUpdateTiming(timing);
+			recordVisibleTiming(timing);
+			return timing;
+		},
+		[diagnosticsEnabled, recordVisibleTiming],
 	);
 
 	const resetWordProgress = useCallback(
@@ -258,6 +292,7 @@ export function useVoiceFollow({ blocks, onPositionChange }) {
 
 			let transitionCarryoverWords = null;
 			let movementLatencyMs = null;
+			let visibleUpdateId = null;
 			if (nextState.shouldMove) {
 				const positionChangedAt = getDiagnosticTime();
 				const nextBlockWords =
@@ -277,6 +312,11 @@ export function useVoiceFollow({ blocks, onPositionChange }) {
 				metricsRef.current.activeBlockChanges += 1;
 				metricsRef.current.stateUpdateCount += 1;
 				setCurrentBlockIndexState(nextState.nextIndex);
+				visibleUpdateId = scheduleVisibleUpdateTiming({
+					decisionAt: positionChangedAt,
+					kind: "block",
+					recognitionReceivedAt: diagnosticContext.receivedAt,
+				})?.id ?? null;
 				movementLatencyMs = diagnosticContext.receivedAt
 					? Number(
 							(positionChangedAt - diagnosticContext.receivedAt).toFixed(2),
@@ -295,6 +335,7 @@ export function useVoiceFollow({ blocks, onPositionChange }) {
 				const didRequestScroll = onPositionChangeRef.current?.(match, {
 					positionChangedAt,
 					recognitionReceivedAt: diagnosticContext.receivedAt,
+					visibleUpdateId,
 				});
 				if (didRequestScroll !== false) {
 					metricsRef.current.scrollRequestCount += 1;
@@ -329,6 +370,13 @@ export function useVoiceFollow({ blocks, onPositionChange }) {
 				};
 				wordProgressTimingRef.current = nextWordProgressTiming;
 				setWordProgressTiming(nextWordProgressTiming);
+				if (visibleUpdateId === null) {
+					scheduleVisibleUpdateTiming({
+						decisionAt: progressCalculatedAt,
+						kind: "word-progress",
+						recognitionReceivedAt: diagnosticContext.receivedAt,
+					});
+				}
 			}
 
 			const completedBlock = isBlockProgressComplete(
@@ -387,6 +435,7 @@ export function useVoiceFollow({ blocks, onPositionChange }) {
 		[
 			recordDiagnosticEvent,
 			resetBlockTracking,
+			scheduleVisibleUpdateTiming,
 			scheduleWaitingStatus,
 			updateStatus,
 		],
@@ -680,6 +729,7 @@ export function useVoiceFollow({ blocks, onPositionChange }) {
 			enabled: diagnosticsEnabled,
 			events: diagnosticsSnapshot.events,
 			summary: diagnosticsSnapshot.summary,
+			timings: diagnosticsSnapshot.timings ?? [],
 		},
 		disable,
 		enable,
@@ -687,10 +737,12 @@ export function useVoiceFollow({ blocks, onPositionChange }) {
 		isSupported,
 		message,
 		matchedWordCount,
+		recordVisibleTiming,
 		setCurrentBlockIndex,
 		status,
 		totalWordCount: blocks[currentBlockIndex]?.words.length ?? 0,
 		toggle,
 		wordProgressTiming,
+		visibleUpdateTiming,
 	};
 }

@@ -1,4 +1,4 @@
-const IS_DEVELOPMENT = Boolean(import.meta.env?.DEV)
+const IS_DEVELOPMENT = import.meta.env.DEV
 
 export function voiceFollowDiagnosticsEnabled() {
   if (!IS_DEVELOPMENT || typeof window === 'undefined') return false

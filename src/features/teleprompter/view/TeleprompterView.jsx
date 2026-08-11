@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
+  Activity,
   ArrowLeft,
   Focus,
   FlipHorizontal2,
@@ -68,6 +69,15 @@ export default function TeleprompterView() {
     'Auto',
   )
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
+  const [isDiagnosticsOpen, setIsDiagnosticsOpen] = useState(() => {
+    if (typeof window === 'undefined') return false
+
+    try {
+      return window.sessionStorage.getItem('scripty.voiceFollowDiagnosticsOpen') === 'true'
+    } catch {
+      return false
+    }
+  })
   const [scrollMode, setScrollMode] = useState(SCROLL_MODES.TIMED)
   const settings = resolveSettings(storedSettings)
   const parserMode = useMemo(
@@ -101,6 +111,7 @@ export default function TeleprompterView() {
   const segmentRefs = useRef([])
   const pendingVoiceScrollBlockRef = useRef(null)
   const voiceScrollFrameRef = useRef(null)
+  const voiceTimingReporterRef = useRef(() => {})
   const isVoiceScrollingRef = useRef(false)
   const trackedVoiceBlockIndexRef = useRef(0)
 
@@ -155,6 +166,10 @@ export default function TeleprompterView() {
         : null,
       selectedBlock: match.index,
     })
+    voiceTimingReporterRef.current({
+      id: timing.visibleUpdateId,
+      scrollRequestedAt,
+    })
     viewport.scrollTo({
       behavior: VOICE_FOLLOW_SCROLL_BEHAVIOR,
       top: targetTop,
@@ -181,6 +196,10 @@ export default function TeleprompterView() {
         source: 'snap',
         targetErrorPx: Number(Math.abs(viewport.scrollTop - targetTop).toFixed(1)),
       })
+      voiceTimingReporterRef.current({
+        id: timing.visibleUpdateId,
+        scrollSettledAt: getDiagnosticTime(),
+      })
     })
     return true
   }, [])
@@ -189,6 +208,13 @@ export default function TeleprompterView() {
     blocks: trackableBlocks,
     onPositionChange: centerVoiceMatch,
   })
+  const {
+    recordVisibleTiming,
+    visibleUpdateTiming,
+  } = voiceFollow
+  useEffect(() => {
+    voiceTimingReporterRef.current = recordVisibleTiming
+  }, [recordVisibleTiming])
   const isTimedPlaybackEnabled = canStartTimedScroll(
     scrollMode,
     voiceFollow.isEnabled,
@@ -245,6 +271,15 @@ export default function TeleprompterView() {
         : null,
     })
   }, [voiceFollow.wordProgressTiming])
+
+  useLayoutEffect(() => {
+    if (!visibleUpdateTiming) return
+
+    recordVisibleTiming({
+      commitAt: getDiagnosticTime(),
+      id: visibleUpdateTiming.id,
+    })
+  }, [recordVisibleTiming, visibleUpdateTiming])
 
   const changeScrollMode = useCallback(
     (nextMode) => {
@@ -336,9 +371,25 @@ export default function TeleprompterView() {
     setSpeakerColors((current) => ({ ...current, [speaker]: color }))
   }
 
+  const setDiagnosticsOpen = useCallback((isOpen) => {
+    setIsDiagnosticsOpen(isOpen)
+    try {
+      window.sessionStorage.setItem(
+        'scripty.voiceFollowDiagnosticsOpen',
+        String(isOpen),
+      )
+    } catch {
+      // Diagnostics remain usable when browser storage is unavailable.
+    }
+  }, [])
+
   return (
     <main
-      className={`teleprompter ${settings.focusMode ? 'teleprompter--focus' : ''}`}
+      className={`teleprompter ${settings.focusMode ? 'teleprompter--focus' : ''} ${
+        voiceFollow.diagnostics.enabled && isDiagnosticsOpen
+          ? 'teleprompter--diagnostics-open'
+          : ''
+      }`}
     >
       <header className="teleprompter__topbar">
         <div className="teleprompter__identity">
@@ -366,6 +417,17 @@ export default function TeleprompterView() {
           >
             Back to Script
           </Button>
+          {voiceFollow.diagnostics.enabled ? (
+            <Button
+              className="teleprompter__diagnostics-button"
+              icon={Activity}
+              onClick={() => setDiagnosticsOpen(!isDiagnosticsOpen)}
+              title={isDiagnosticsOpen ? 'Hide diagnostics' : 'Show diagnostics'}
+              variant="ghost"
+            >
+              Diagnostics
+            </Button>
+          ) : null}
         </div>
         <div className="teleprompter__actions">
           <IconButton
@@ -415,7 +477,11 @@ export default function TeleprompterView() {
         </div>
       ) : null}
 
-      <VoiceFollowDiagnosticsPanel diagnostics={voiceFollow.diagnostics} />
+      <VoiceFollowDiagnosticsPanel
+        diagnostics={voiceFollow.diagnostics}
+        isOpen={isDiagnosticsOpen}
+        onOpenChange={setDiagnosticsOpen}
+      />
 
       <section
         className="teleprompter__viewport"

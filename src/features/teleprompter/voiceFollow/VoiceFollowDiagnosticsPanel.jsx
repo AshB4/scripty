@@ -5,9 +5,14 @@ function formatWords(words) {
   return words.length ? words.join(' ') : 'none'
 }
 
-export default function VoiceFollowDiagnosticsPanel({ diagnostics }) {
+export default function VoiceFollowDiagnosticsPanel({
+  diagnostics,
+  isOpen,
+  onOpenChange,
+}) {
   const [copied, setCopied] = useState(false)
   const events = diagnostics.events
+  const timings = diagnostics.timings ?? []
   const metrics = diagnostics.summary
   const summary = useMemo(
     () => ({
@@ -20,12 +25,12 @@ export default function VoiceFollowDiagnosticsPanel({ diagnostics }) {
     [events],
   )
 
-  if (!diagnostics.enabled) return null
+  if (!diagnostics.enabled || !isOpen) return null
 
   const copyDiagnostics = async () => {
     try {
       await navigator.clipboard.writeText(
-        JSON.stringify({ summary: metrics, events }, null, 2),
+        JSON.stringify({ summary: metrics, events, timings }, null, 2),
       )
       setCopied(true)
       window.setTimeout(() => setCopied(false), 1500)
@@ -53,6 +58,9 @@ export default function VoiceFollowDiagnosticsPanel({ diagnostics }) {
             <Clipboard aria-hidden="true" size={14} />
           )}
           {copied ? 'Copied' : 'Copy Diagnostics'}
+        </button>
+        <button onClick={() => onOpenChange(false)} type="button">
+          Hide diagnostics
         </button>
       </header>
       <div className="voice-diagnostics__summary">
@@ -131,6 +139,30 @@ export default function VoiceFollowDiagnosticsPanel({ diagnostics }) {
           ))
         ) : (
           <p>Start Voice Follow to capture recognition events.</p>
+        )}
+      </div>
+      <div className="voice-diagnostics__events" role="log">
+        {timings.length ? (
+          timings.slice(-6).map((timing) => (
+            <article key={timing.id}>
+              <strong>
+                #{timing.id} · {timing.kind}
+              </strong>
+              <span>
+                Recognition → decision {timing.recognitionToDecisionMs ?? 'n/a'} ms
+                {' '}· decision → commit {timing.decisionToCommitMs ?? 'n/a'} ms
+              </span>
+              <span>
+                Recognition → scroll request {timing.recognitionToScrollRequestMs ?? 'n/a'} ms
+                {' '}· scroll request → settled {timing.scrollRequestToSettledMs ?? 'n/a'} ms
+              </span>
+              <span>
+                Recognition → settled {timing.recognitionToScrollSettledMs ?? 'n/a'} ms
+              </span>
+            </article>
+          ))
+        ) : (
+          <p>Visible update timings appear after Voice Follow makes progress.</p>
         )}
       </div>
     </aside>
