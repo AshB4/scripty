@@ -346,3 +346,72 @@ test("stale previous-block words cannot complete the next block", () => {
 
 	assert.ok(progress < nextBlockWords.length);
 });
+
+test('active progress can consume a missing article "a" when later words match', () => {
+	const blockWords = toVoiceWords("I picked up a cup of coffee");
+	const progress = getOrderedPrefixProgress({
+		blockWords,
+		transcriptWords: toVoiceWords("I picked up cup of coffee"),
+	});
+
+	assert.equal(progress, blockWords.length);
+});
+
+test('active progress continues when words after a missing article arrive in a new result boundary', () => {
+	const blockWords = toVoiceWords("I picked up a cup of coffee");
+	const progress = getOrderedPrefixProgress({
+		blockWords,
+		previousMatchedCount: 3,
+		transcriptWords: toVoiceWords("cup of coffee"),
+	});
+
+	assert.equal(progress, blockWords.length);
+});
+
+test('active progress can consume a missing article "an" when later words match', () => {
+	const blockWords = toVoiceWords("We shared an update with everyone");
+	const progress = getOrderedPrefixProgress({
+		blockWords,
+		transcriptWords: toVoiceWords("We shared update with everyone"),
+	});
+
+	assert.equal(progress, blockWords.length);
+});
+
+test('active progress can consume a missing article "the" at the start', () => {
+	const blockWords = toVoiceWords("The tracker should follow the next line");
+	const progress = getOrderedPrefixProgress({
+		blockWords,
+		transcriptWords: toVoiceWords("Tracker should follow the next line"),
+	});
+
+	assert.equal(progress, blockWords.length);
+});
+
+test('active progress does not consume a missing meaningful word', () => {
+	const progress = getOrderedPrefixProgress({
+		blockWords: toVoiceWords("I will not go there"),
+		transcriptWords: toVoiceWords("I will go there"),
+	});
+
+	assert.equal(progress, 2);
+});
+
+test('active progress retains filler and contraction normalization behavior', () => {
+	const blockWords = toVoiceWords("We're ready to begin");
+	const progress = getOrderedPrefixProgress({
+		blockWords,
+		transcriptWords: toVoiceWords("We're um ready to begin"),
+	});
+
+	assert.equal(progress, blockWords.length);
+});
+
+test('active progress cannot leap across several omitted script words', () => {
+	const progress = getOrderedPrefixProgress({
+		blockWords: toVoiceWords("I picked a very carefully chosen route"),
+		transcriptWords: toVoiceWords("I picked chosen route"),
+	});
+
+	assert.equal(progress, 2);
+});

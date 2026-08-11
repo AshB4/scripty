@@ -16,6 +16,7 @@ import {
 	EMPTY_PENDING_MATCH,
 	isBlockProgressComplete,
 	resolveIdenticalBlockOccurrence,
+	updateCompletedBlockOccurrence,
 } from "./voiceFollowTracking.js";
 import {
 	getDiagnosticTime,
@@ -345,13 +346,13 @@ export function useVoiceFollow({ blocks, onPositionChange }) {
 			if (justCompletedBlock) {
 				pendingMatchRef.current = { ...EMPTY_PENDING_MATCH };
 				lowConfidenceCountRef.current = 0;
-				if (diagnosticContext.evidence) {
-					completedOccurrenceRef.current = {
-						blockIndex: activeIndex,
-						...diagnosticContext.evidence,
-					};
-				}
 			}
+			completedOccurrenceRef.current = updateCompletedBlockOccurrence({
+				blockIndex: activeIndex,
+				completedOccurrence: completedOccurrenceRef.current,
+				evidence: diagnosticContext.evidence,
+				justCompletedBlock,
+			});
 
 			recordDiagnosticEvent({
 				candidateLine: match ? match.index + 1 : null,
@@ -414,7 +415,7 @@ export function useVoiceFollow({ blocks, onPositionChange }) {
 						handleTranscript(processedResult.rollingWords, {
 							evidence: item
 								? {
-										resultIndex: item.resultIndex,
+										...item,
 										sessionId: recognitionSessionIdRef.current,
 									}
 								: null,
@@ -440,7 +441,7 @@ export function useVoiceFollow({ blocks, onPositionChange }) {
 						);
 						const outcome = handleTranscript(sequentialWords, {
 							evidence: {
-								resultIndex: item.resultIndex,
+								...item,
 								sessionId: recognitionSessionIdRef.current,
 							},
 							eventNumber: eventNumberRef.current,

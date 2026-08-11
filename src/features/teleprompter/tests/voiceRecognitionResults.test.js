@@ -105,11 +105,13 @@ test('aggregates multiple changed results into one recognition update', () => {
     {
       isFinal: true,
       resultIndex: 0,
+      wordCount: 2,
       words: ['finished', 'words'],
     },
     {
       isFinal: false,
       resultIndex: 1,
+      wordCount: 2,
       words: ['interim', 'words'],
     },
   ])
@@ -141,6 +143,7 @@ test('ordered evidence includes only changed interim result boundaries', () => {
     {
       isFinal: false,
       resultIndex: 1,
+      wordCount: 3,
       words: ['second', 'interim', 'expanded'],
     },
   ])
@@ -296,4 +299,35 @@ test('a recognition restart creates fresh session-specific result indexes', () =
 
   assert.deepEqual(firstSession.rollingWords, ['old', 'session'])
   assert.deepEqual(restartedSession.rollingWords, ['new', 'session'])
+})
+
+test('changed-result work and retained transcript state remain bounded', () => {
+  const resultCount = 7
+  const longTranscript = Array.from(
+    { length: 30 },
+    (_, index) => `word${index}`,
+  ).join(' ')
+  const event = {
+    resultIndex: 0,
+    results: Array.from({ length: resultCount }, (_, index) =>
+      recognitionResult(`${longTranscript} boundary${index}`, true),
+    ),
+  }
+  const processed = processRecognitionEvent({
+    event,
+    sessionState: createRecognitionSessionState(),
+  })
+  const unchanged = processRecognitionEvent({
+    event: { ...event, resultIndex: resultCount - 1 },
+    sessionState: processed.sessionState,
+  })
+
+  assert.equal(processed.orderedEvidence.length, resultCount)
+  assert.equal(
+    processed.orderedEvidence.every((evidence) => evidence.words.length <= 18),
+    true,
+  )
+  assert.equal(processed.sessionState.finalWords.length, 18)
+  assert.equal(unchanged.orderedEvidence.length, 0)
+  assert.equal(unchanged.receivedSpeech, false)
 })

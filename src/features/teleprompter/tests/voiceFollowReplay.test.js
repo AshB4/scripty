@@ -11,6 +11,7 @@ import {
   createCleanBlockTrackingState,
   isBlockProgressComplete,
   resolveIdenticalBlockOccurrence,
+  updateCompletedBlockOccurrence,
 } from '../voiceFollow/voiceFollowTracking.js'
 import {
   clearRecognitionTranscript,
@@ -47,6 +48,7 @@ function createReplay(blocksToReplay) {
   let sessionState = createRecognitionSessionState()
   let sessionId = 1
   let status = 'Listening'
+  let matcherInvocationCount = 0
   const moves = []
 
   function elapseSilence() {
@@ -74,6 +76,7 @@ function createReplay(blocksToReplay) {
       return {
         ...result,
         lowConfidenceCount,
+        matcherInvocationCount,
         moves: [...moves],
         pendingMatch,
         sessionState: {
@@ -87,6 +90,7 @@ function createReplay(blocksToReplay) {
 
     function processTranscript(transcriptWords, progressWords, evidence) {
       const startingIndex = currentIndex
+      matcherInvocationCount += 1
       let match = findVoiceMatch({
         blocks: blocksToReplay,
         currentIndex,
@@ -157,11 +161,13 @@ function createReplay(blocksToReplay) {
       if (justCompletedBlock) {
         pendingMatch = { count: 0, index: null }
         lowConfidenceCount = 0
-        completedOccurrence = {
-          blockIndex: currentIndex,
-          ...evidence,
-        }
       }
+      completedOccurrence = updateCompletedBlockOccurrence({
+        blockIndex: currentIndex,
+        completedOccurrence,
+        evidence,
+        justCompletedBlock,
+      })
 
       return { completedBlock, decision, didMove: decision.shouldMove, match }
     }
@@ -175,7 +181,7 @@ function createReplay(blocksToReplay) {
         processed.rollingWords,
         processed.changedWords,
         item
-          ? { resultIndex: item.resultIndex, sessionId }
+          ? { ...item, sessionId }
           : { resultIndex: event.resultIndex ?? 0, sessionId },
       )
     } else {
@@ -186,7 +192,7 @@ function createReplay(blocksToReplay) {
           -ROLLING_TRANSCRIPT_WORDS,
         )
         lastOutcome = processTranscript(sequentialWords, item.words, {
-          resultIndex: item.resultIndex,
+          ...item,
           sessionId,
         })
         if (lastOutcome.completedBlock || lastOutcome.didMove) {
@@ -202,6 +208,7 @@ function createReplay(blocksToReplay) {
       lowConfidenceCount,
       match: lastOutcome?.match,
       matchedWordCount,
+      matcherInvocationCount,
       moves: [...moves],
       pendingMatch,
       sessionState: {
@@ -235,8 +242,14 @@ test('replay: a strong next-line interim advances exactly once', () => {
 
   assert.equal(first.currentIndex, 1)
   assert.deepEqual(first.moves, [1])
+  assert.equal(first.matcherInvocationCount, 1)
   assert.equal(duplicate.currentIndex, 1)
   assert.deepEqual(duplicate.moves, [1])
+  assert.equal(
+    duplicate.matcherInvocationCount,
+    1,
+    'an unchanged callback must not invoke the matcher again',
+  )
 })
 
 test('replay: repeating the current line remains on the current block', () => {
@@ -743,6 +756,64 @@ test('replay: progressive revisions keep updating through the next block', () =>
   assert.equal(nextCompleted.matchedWordCount, blocks[1].words.length)
 })
 
+test('replay: a missing article does not freeze active progress or the next transition', () => {
+  const articleLines = [
+    'I picked up a cup of coffee before the meeting.',
+    'The next line still advances normally.',
+  ]
+  const articleBlocks = articleLines.map((text, index) => ({
+    id: `article-line-${index + 1}`,
+    segmentIndex: index,
+    text,
+    words: toVoiceWords(text),
+  }))
+  const replay = createReplay(articleBlocks)
+  const started = replay.deliver(
+    {
+      resultIndex: 0,
+      results: [recognitionResult('I picked up')],
+    },
+    1_000,
+  )
+  const continued = replay.deliver(
+    {
+      resultIndex: 0,
+      results: [
+        recognitionResult('I picked up cup of coffee before the meeting'),
+      ],
+    },
+    1_100,
+  )
+  replay.deliver(
+    {
+      resultIndex: 0,
+      results: [
+        recognitionResult(
+          'I picked up cup of coffee before the meeting',
+          true,
+        ),
+      ],
+    },
+    1_200,
+  )
+  const next = replay.deliver(
+    {
+      resultIndex: 1,
+      results: [
+        recognitionResult('I picked up cup of coffee before the meeting', true),
+        recognitionResult(articleLines[1], true),
+      ],
+    },
+    1_300,
+  )
+
+  assert.equal(started.matchedWordCount, 3)
+  assert.equal(continued.matchedWordCount, articleBlocks[0].words.length)
+  assert.equal(next.currentIndex, 1)
+  assert.equal(next.matchedWordCount, articleBlocks[1].words.length)
+  assert.deepEqual(next.moves, [1])
+})
+
 const repeatedLine =
   'This sentence will be repeated once so I can see whether the tracker stays in the correct place.'
 const repeatedBlocks = [repeatedLine, repeatedLine, lines[2]].map(
@@ -793,6 +864,68 @@ test('replay: a second distinct utterance advances across identical blocks', () 
   assert.deepEqual(second.final.moves, [1])
 })
 
+test('replay: a trailing result boundary from the first identical utterance does not restart progress', () => {
+  const replay = createReplay(repeatedBlocks)
+  const first = deliverRepeatedUtterance(replay, 0, 1_000)
+  const trailingRevision = replay.deliver(
+    {
+      resultIndex: 1,
+      results: [
+        recognitionResult(repeatedLine, true),
+        recognitionResult(
+          'sentence will be repeated once so I can see whether the tracker stays in the correct place',
+        ),
+      ],
+    },
+    1_200,
+  )
+  const trailingFinal = replay.deliver(
+    {
+      resultIndex: 1,
+      results: [
+        recognitionResult(repeatedLine, true),
+        recognitionResult(
+          'sentence will be repeated once so I can see whether the tracker stays in the correct place',
+          true,
+        ),
+      ],
+    },
+    1_300,
+  )
+
+  assert.equal(first.final.currentIndex, 0)
+  assert.equal(first.final.matchedWordCount, repeatedBlocks[0].words.length)
+  assert.equal(
+    trailingRevision.currentIndex,
+    0,
+    'a second result boundary from the same utterance must not count as a second occurrence',
+  )
+  assert.equal(
+    trailingRevision.matchedWordCount,
+    repeatedBlocks[0].words.length,
+    'the completed first occurrence must not visually reset its progress',
+  )
+  assert.deepEqual(trailingRevision.moves, [])
+  assert.equal(trailingFinal.currentIndex, 0)
+  assert.equal(trailingFinal.matchedWordCount, repeatedBlocks[0].words.length)
+  assert.deepEqual(trailingFinal.moves, [])
+})
+
+test('replay: restarting recognition does not create an identical occurrence without new speech', () => {
+  const replay = createReplay(repeatedBlocks)
+  const first = deliverRepeatedUtterance(replay, 0, 1_000)
+  const restarted = replay.restartRecognitionSession()
+
+  assert.equal(first.final.currentIndex, 0)
+  assert.equal(restarted.currentIndex, 0)
+  assert.equal(restarted.matchedWordCount, repeatedBlocks[0].words.length)
+
+  const second = deliverRepeatedUtterance(replay, 0, 2_000)
+  assert.equal(second.interim.currentIndex, 0)
+  assert.equal(second.final.currentIndex, 1)
+  assert.deepEqual(second.final.moves, [1])
+})
+
 test('replay: three utterances across two identical blocks stop at the second block', () => {
   const replay = createReplay(repeatedBlocks)
   const first = deliverRepeatedUtterance(replay, 0, 1_000)
@@ -829,4 +962,9 @@ test('replay: one combined recognition result should advance after a full next l
     'the full next-line result should advance instead of remaining on the completed current line',
   )
   assert.deepEqual(combined.moves, [1])
+  assert.equal(
+    combined.matcherInvocationCount,
+    2,
+    'each changed result boundary should invoke the bounded matcher once',
+  )
 })

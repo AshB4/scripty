@@ -51,6 +51,61 @@ function isLaterRecognitionEvidence(evidence, completedOccurrence) {
   return evidence.resultIndex > completedOccurrence.resultIndex
 }
 
+function isSameRecognitionBoundary(evidence, completedOccurrence) {
+  return (
+    evidence?.sessionId === completedOccurrence?.sessionId &&
+    evidence?.resultIndex === completedOccurrence?.resultIndex
+  )
+}
+
+function isCompleteFinalOccurrence(evidence, blockWords) {
+  if (
+    !evidence?.isFinal ||
+    !blockWords?.length ||
+    evidence.wordCount !== blockWords.length ||
+    !evidence.words?.length
+  ) {
+    return false
+  }
+
+  return hasSameWords(
+    evidence.words,
+    blockWords.slice(-evidence.words.length),
+  )
+}
+
+export function updateCompletedBlockOccurrence({
+  blockIndex,
+  completedOccurrence,
+  evidence,
+  justCompletedBlock,
+}) {
+  if (!evidence) return completedOccurrence
+
+  if (justCompletedBlock) {
+    return {
+      blockIndex,
+      isFinal: evidence.isFinal,
+      resultIndex: evidence.resultIndex,
+      sessionId: evidence.sessionId,
+    }
+  }
+
+  if (
+    completedOccurrence?.blockIndex === blockIndex &&
+    !completedOccurrence.isFinal &&
+    evidence.isFinal &&
+    isSameRecognitionBoundary(evidence, completedOccurrence)
+  ) {
+    return {
+      ...completedOccurrence,
+      isFinal: true,
+    }
+  }
+
+  return completedOccurrence
+}
+
 export function resolveIdenticalBlockOccurrence({
   blocks,
   completedOccurrence,
@@ -88,7 +143,8 @@ export function resolveIdenticalBlockOccurrence({
   if (
     match.index !== currentIndex ||
     !nextBlock ||
-    !hasSameWords(currentBlock.words, nextBlock.words)
+    !hasSameWords(currentBlock.words, nextBlock.words) ||
+    !isCompleteFinalOccurrence(evidence, currentBlock.words)
   ) {
     return match
   }

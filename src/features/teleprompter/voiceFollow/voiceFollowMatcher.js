@@ -8,6 +8,7 @@ export const VOICE_MATCH_THRESHOLDS = {
   skipBase: 0.52,
   skipStep: 0.035,
 }
+const SKIPPABLE_PROGRESS_WORDS = new Set(['a', 'an', 'the'])
 
 export function normalizeVoiceText(value) {
   return String(value ?? '')
@@ -21,6 +22,22 @@ export function normalizeVoiceText(value) {
 export function toVoiceWords(value) {
   const normalized = normalizeVoiceText(value)
   return normalized ? normalized.split(' ') : []
+}
+
+function canSkipProgressWord(scriptWords, scriptIndex, spokenWord) {
+  return (
+    SKIPPABLE_PROGRESS_WORDS.has(scriptWords[scriptIndex]) &&
+    spokenWord === scriptWords[scriptIndex + 1]
+  )
+}
+
+function advanceProgressIndex(scriptWords, scriptIndex, spokenWord) {
+  if (spokenWord === scriptWords[scriptIndex]) return scriptIndex + 1
+  if (canSkipProgressWord(scriptWords, scriptIndex, spokenWord)) {
+    return scriptIndex + 2
+  }
+
+  return scriptIndex
 }
 
 export function getOrderedPrefixProgress({
@@ -42,14 +59,27 @@ export function getOrderedPrefixProgress({
   if (!scriptWords.length || !spokenWords.length) return previous
 
   const earliestStart = Math.max(0, previous - spokenWords.length)
-  const latestStart = previous > 0 ? previous - 1 : 0
+  const canResumeAtCurrent = canSkipProgressWord(
+    scriptWords,
+    previous,
+    spokenWords[0],
+  )
+  const latestStart = canResumeAtCurrent
+    ? previous
+    : previous > 0
+      ? previous - 1
+      : 0
   let furthestMatch = previous
 
   for (let start = earliestStart; start <= latestStart; start += 1) {
     let scriptIndex = start
 
     for (const spokenWord of spokenWords) {
-      if (spokenWord === scriptWords[scriptIndex]) scriptIndex += 1
+      scriptIndex = advanceProgressIndex(
+        scriptWords,
+        scriptIndex,
+        spokenWord,
+      )
       if (scriptIndex === scriptWords.length) break
     }
 

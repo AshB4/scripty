@@ -40,7 +40,12 @@ import {
   getDiagnosticTime,
   logVoiceFollowDiagnostic,
 } from '../voiceFollow/voiceFollowDiagnostics.js'
-import { shouldRequestVoiceScroll } from '../voiceFollow/voiceFollowScroll.js'
+import {
+  VOICE_FOLLOW_SCROLL_BEHAVIOR,
+  getVoiceFollowScrollTarget,
+  shouldRequestVoiceScroll,
+} from '../voiceFollow/voiceFollowScroll.js'
+import { findNearestActiveVoiceBlock } from '../voiceFollow/activeBlockTracker.js'
 import { leaveTeleprompter } from '../teleprompterNavigation.js'
 import {
   createTrackableBlocks,
@@ -95,14 +100,14 @@ export default function TeleprompterView() {
   const viewportRef = useRef(null)
   const segmentRefs = useRef([])
   const pendingVoiceScrollBlockRef = useRef(null)
-  const voiceScrollEndHandlerRef = useRef(null)
-  const voiceScrollTimerRef = useRef(null)
+  const voiceScrollFrameRef = useRef(null)
   const isVoiceScrollingRef = useRef(false)
+  const trackedVoiceBlockIndexRef = useRef(0)
 
   const centerVoiceMatch = useCallback((match, timing = {}) => {
     const viewport = viewportRef.current
-    const segment = segmentRefs.current[match.block.segmentIndex]
-    if (!viewport || !segment) return false
+    const activeSegment = segmentRefs.current[match.block.segmentIndex]
+    if (!viewport || !activeSegment) return false
     if (
       !shouldRequestVoiceScroll(
         pendingVoiceScrollBlockRef.current,
@@ -117,33 +122,45 @@ export default function TeleprompterView() {
     }
 
     const scrollStartedAt = getDiagnosticTime()
-    const maximumScrollTop = Math.max(
-      0,
-      viewport.scrollHeight - viewport.clientHeight,
-    )
-    const targetTop = Math.min(
-      maximumScrollTop,
-      Math.max(
-        0,
-        segment.offsetTop -
-          viewport.clientHeight / 2 +
-          segment.offsetHeight / 2,
-      ),
-    )
+    const priorSegmentIndex =
+      match.block.segmentIndex > 0 ? match.block.segmentIndex - 1 : null
+    const priorSegment =
+      priorSegmentIndex === null
+        ? null
+        : segmentRefs.current[priorSegmentIndex]
+    const viewportBounds = viewport.getBoundingClientRect()
+    const getScrollBounds = (element) => {
+      if (!element) return null
+      const bounds = element.getBoundingClientRect()
+      return {
+        height: bounds.height,
+        top: viewport.scrollTop + bounds.top - viewportBounds.top,
+      }
+    }
+    const targetTop = getVoiceFollowScrollTarget({
+      activeBlock: getScrollBounds(activeSegment),
+      previousBlock: getScrollBounds(priorSegment),
+      viewportHeight: viewport.clientHeight,
+      viewportScrollHeight: viewport.scrollHeight,
+    })
     pendingVoiceScrollBlockRef.current = match.index
     isVoiceScrollingRef.current = true
-    window.clearTimeout(voiceScrollTimerRef.current)
-    if (voiceScrollEndHandlerRef.current) {
-      viewport.removeEventListener(
-        'scrollend',
-        voiceScrollEndHandlerRef.current,
-      )
-    }
-
-    const finishVoiceScroll = (source) => {
-      window.clearTimeout(voiceScrollTimerRef.current)
-      viewport.removeEventListener('scrollend', voiceScrollEndHandlerRef.current)
-      voiceScrollEndHandlerRef.current = null
+    const scrollRequestedAt = getDiagnosticTime()
+    logVoiceFollowDiagnostic('scroll-requested', {
+      positionToScrollRequestMs: timing.positionChangedAt
+        ? Number((scrollRequestedAt - timing.positionChangedAt).toFixed(2))
+        : null,
+      recognitionToScrollRequestMs: timing.recognitionReceivedAt
+        ? Number((scrollRequestedAt - timing.recognitionReceivedAt).toFixed(2))
+        : null,
+      selectedBlock: match.index,
+    })
+    viewport.scrollTo({
+      behavior: VOICE_FOLLOW_SCROLL_BEHAVIOR,
+      top: targetTop,
+    })
+    window.cancelAnimationFrame(voiceScrollFrameRef.current)
+    voiceScrollFrameRef.current = window.requestAnimationFrame(() => {
       if (pendingVoiceScrollBlockRef.current === match.index) {
         pendingVoiceScrollBlockRef.current = null
       }
@@ -161,30 +178,10 @@ export default function TeleprompterView() {
           (getDiagnosticTime() - scrollStartedAt).toFixed(2),
         ),
         selectedBlock: match.index,
-        source,
+        source: 'snap',
         targetErrorPx: Number(Math.abs(viewport.scrollTop - targetTop).toFixed(1)),
       })
-    }
-
-    voiceScrollEndHandlerRef.current = () => finishVoiceScroll('scrollend')
-    viewport.addEventListener('scrollend', voiceScrollEndHandlerRef.current, {
-      once: true,
     })
-    viewport.scrollTo({
-      behavior: 'smooth',
-      top: targetTop,
-    })
-    window.requestAnimationFrame(() => {
-      logVoiceFollowDiagnostic('scroll-render-start', {
-        positionToRenderMs: timing.positionChangedAt
-          ? Number((getDiagnosticTime() - timing.positionChangedAt).toFixed(2))
-          : null,
-        selectedBlock: match.index,
-      })
-    })
-    voiceScrollTimerRef.current = window.setTimeout(() => {
-      finishVoiceScroll('fallback')
-    }, 700)
     return true
   }, [])
 
@@ -211,6 +208,10 @@ export default function TeleprompterView() {
   const setSegmentElement = useCallback((segmentIndex, element) => {
     segmentRefs.current[segmentIndex] = element
   }, [])
+
+  useEffect(() => {
+    trackedVoiceBlockIndexRef.current = voiceFollow.currentBlockIndex
+  }, [voiceFollow.currentBlockIndex])
   const structuralPromptSegments = useMemo(
     () =>
       segments.map((segment, segmentIndex) =>
@@ -294,25 +295,20 @@ export default function TeleprompterView() {
 
       window.cancelAnimationFrame(frame)
       frame = window.requestAnimationFrame(() => {
-        const viewportCenter =
-          viewport.getBoundingClientRect().top + viewport.clientHeight / 2
-        let nearestBlockIndex = 0
-        let nearestDistance = Number.POSITIVE_INFINITY
-
-        trackableBlocks.forEach((block, blockIndex) => {
-          const element = segmentRefs.current[block.segmentIndex]
-          if (!element) return
-
-          const bounds = element.getBoundingClientRect()
-          const distance = Math.abs(
-            bounds.top + bounds.height / 2 - viewportCenter,
-          )
-          if (distance < nearestDistance) {
-            nearestDistance = distance
-            nearestBlockIndex = blockIndex
-          }
+        const viewportBounds = viewport.getBoundingClientRect()
+        const nearestBlockIndex = findNearestActiveVoiceBlock({
+          blocks: trackableBlocks,
+          currentIndex: trackedVoiceBlockIndexRef.current,
+          getBlockBounds: (block) => {
+            const element = segmentRefs.current[block.segmentIndex]
+            return element?.getBoundingClientRect() ?? null
+          },
+          viewportCenter: viewportBounds.top + viewport.clientHeight / 2,
         })
 
+        if (nearestBlockIndex === trackedVoiceBlockIndexRef.current) return
+
+        trackedVoiceBlockIndexRef.current = nearestBlockIndex
         setCurrentVoiceBlock(nearestBlockIndex)
       })
     }
@@ -326,14 +322,7 @@ export default function TeleprompterView() {
 
   useEffect(
     () => () => {
-      window.clearTimeout(voiceScrollTimerRef.current)
-      const viewport = viewportRef.current
-      if (viewport && voiceScrollEndHandlerRef.current) {
-        viewport.removeEventListener(
-          'scrollend',
-          voiceScrollEndHandlerRef.current,
-        )
-      }
+      window.cancelAnimationFrame(voiceScrollFrameRef.current)
       pendingVoiceScrollBlockRef.current = null
     },
     [],

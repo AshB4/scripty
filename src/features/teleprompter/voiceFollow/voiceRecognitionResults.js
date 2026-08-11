@@ -56,6 +56,7 @@ export function processRecognitionEvent({ event, sessionState }) {
         evidenceCandidates.push({
           isFinal: true,
           resultIndex: index,
+          wordCount: words.length,
           words: words.slice(-ROLLING_TRANSCRIPT_WORDS),
         })
       }
@@ -68,6 +69,7 @@ export function processRecognitionEvent({ event, sessionState }) {
         isFinal: false,
         resultIndex: index,
         signature,
+        wordCount: words.length,
         words: words.slice(-ROLLING_TRANSCRIPT_WORDS),
       })
     }
@@ -80,6 +82,7 @@ export function processRecognitionEvent({ event, sessionState }) {
   ).map((evidence) => ({
     isFinal: evidence.isFinal,
     resultIndex: evidence.resultIndex,
+    wordCount: evidence.wordCount,
     words: evidence.words,
   }))
   orderedEvidence.forEach((evidence) => changedWords.push(...evidence.words))

@@ -10,6 +10,7 @@ import {
   createCleanBlockTrackingState,
   getSameEventCarryoverWords,
   isBlockProgressComplete,
+  updateCompletedBlockOccurrence,
 } from '../voiceFollow/voiceFollowTracking.js'
 import {
   clearRecognitionTranscript,
@@ -136,4 +137,26 @@ test('prior-line words cannot complete a later line after cleanup', () => {
 
   assert.deepEqual(cleanState.carryoverWords, [])
   assert.equal(progress, 0)
+})
+
+test('completed occurrence identity promotes an interim to the final on the same boundary', () => {
+  const interimOccurrence = updateCompletedBlockOccurrence({
+    blockIndex: 0,
+    completedOccurrence: null,
+    evidence: { isFinal: false, resultIndex: 2, sessionId: 4 },
+    justCompletedBlock: true,
+  })
+  const finalizedOccurrence = updateCompletedBlockOccurrence({
+    blockIndex: 0,
+    completedOccurrence: interimOccurrence,
+    evidence: { isFinal: true, resultIndex: 2, sessionId: 4 },
+    justCompletedBlock: false,
+  })
+
+  assert.deepEqual(finalizedOccurrence, {
+    blockIndex: 0,
+    isFinal: true,
+    resultIndex: 2,
+    sessionId: 4,
+  })
 })
