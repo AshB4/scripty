@@ -21,12 +21,40 @@ export function useTeleprompter({
   const previousTimeRef = useRef(null)
   const [isPlaying, setIsPlaying] = useState(false)
   const [countdownValue, setCountdownValue] = useState(null)
+  const countdownCompleteRef = useRef(null)
 
   const cancelCountdown = useCallback(() => {
     window.clearInterval(countdownTimerRef.current)
     countdownTimerRef.current = null
+    countdownCompleteRef.current = null
     setCountdownValue(null)
   }, [])
+
+  const startCountdown = useCallback(
+    (onComplete) => {
+      cancelCountdown()
+
+      let remaining = 3
+      countdownCompleteRef.current = onComplete ?? null
+      setCountdownValue(remaining)
+      countdownTimerRef.current = window.setInterval(() => {
+        remaining -= 1
+
+        if (remaining === 0) {
+          window.clearInterval(countdownTimerRef.current)
+          countdownTimerRef.current = null
+          setCountdownValue(null)
+          const complete = countdownCompleteRef.current
+          countdownCompleteRef.current = null
+          complete?.()
+          return
+        }
+
+        setCountdownValue(remaining)
+      }, 1000)
+    },
+    [cancelCountdown],
+  )
 
   useEffect(() => {
     if (!isPlaying) {
@@ -76,30 +104,15 @@ export function useTeleprompter({
     (withCountdown = false) => {
       if (!timedPlaybackEnabled) return
 
-      cancelCountdown()
-
       if (!withCountdown) {
+        cancelCountdown()
         setIsPlaying(true)
         return
       }
 
-      let remaining = 3
-      setCountdownValue(remaining)
-      countdownTimerRef.current = window.setInterval(() => {
-        remaining -= 1
-
-        if (remaining === 0) {
-          window.clearInterval(countdownTimerRef.current)
-          countdownTimerRef.current = null
-          setCountdownValue(null)
-          setIsPlaying(true)
-          return
-        }
-
-        setCountdownValue(remaining)
-      }, 1000)
+      startCountdown(() => setIsPlaying(true))
     },
-    [cancelCountdown, timedPlaybackEnabled],
+    [cancelCountdown, startCountdown, timedPlaybackEnabled],
   )
 
   const scrollBy = useCallback(
@@ -127,6 +140,7 @@ export function useTeleprompter({
       jumpToStart: () => scrollViewportToTop(viewportRef.current),
       pause,
       play,
+      startCountdown,
       rewind: () => scrollBy(-MANUAL_SCROLL_DISTANCE),
       toggle: () => {
         if (!timedPlaybackEnabled) return
@@ -146,6 +160,7 @@ export function useTeleprompter({
       pause,
       play,
       scrollBy,
+      startCountdown,
       toggleFullscreen,
       timedPlaybackEnabled,
       viewportRef,
@@ -171,6 +186,7 @@ export function useTeleprompter({
     controls,
     countdownValue,
     isPlaying,
+    startCountdown,
     viewportRef,
   }
 }

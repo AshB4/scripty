@@ -27,7 +27,9 @@ import {
   resolveSettings,
 } from '../../scripts/scriptSettings.js'
 import FloatingTrackpad from '../controls/FloatingTrackpad.jsx'
+import CountdownOverlay from './CountdownOverlay.jsx'
 import PromptSegment from './PromptSegment.jsx'
+import RecordingProgressPanel from './RecordingProgressPanel.jsx'
 import {
   canStartTimedScroll,
   getModeControlEffects,
@@ -35,6 +37,10 @@ import {
 } from '../scrollMode.js'
 import TeleprompterControls from '../controls/TeleprompterControls.jsx'
 import { useTeleprompter } from '../hooks/useTeleprompter.js'
+import {
+  getTakeCompletionAction,
+  useRecordingProgress,
+} from '../recordingProgress/useRecordingProgress.js'
 import { useVoiceFollow } from '../voiceFollow/useVoiceFollow.js'
 import VoiceFollowDiagnosticsPanel from '../voiceFollow/VoiceFollowDiagnosticsPanel.jsx'
 import {
@@ -97,6 +103,11 @@ export default function TeleprompterView() {
     () => createTrackableBlocks(segments),
     [segments],
   )
+  const recordingProgress = useRecordingProgress({
+    parserMode,
+    recordableBlocks: trackableBlocks,
+    script,
+  })
   const voiceBlockIndexes = useMemo(
     () =>
       new Map(
@@ -219,7 +230,7 @@ export default function TeleprompterView() {
     scrollMode,
     voiceFollow.isEnabled,
   )
-  const { controls, countdownValue, isPlaying } = useTeleprompter({
+  const { controls, countdownValue, isPlaying, startCountdown } = useTeleprompter({
     countdownEnabled: settings.countdown,
     onPrimaryAction:
       scrollMode === SCROLL_MODES.VOICE ? voiceFollow.toggle : undefined,
@@ -314,6 +325,100 @@ export default function TeleprompterView() {
       ? voiceFollow.toggle
       : controls.toggle
 
+  const scrollToRecordableBlock = useCallback(
+    (recordableIndex) => {
+      const viewport = viewportRef.current
+      const recordableBlock = trackableBlocks[recordableIndex]
+      const activeSegment =
+        recordableBlock &&
+        segmentRefs.current[recordableBlock.segmentIndex]
+      if (!viewport || !activeSegment || !recordableBlock) return false
+
+      const previousRecordableBlock =
+        recordableIndex > 0 ? trackableBlocks[recordableIndex - 1] : null
+      const viewportBounds = viewport.getBoundingClientRect()
+      const getScrollBounds = (element) => {
+        if (!element) return null
+        const bounds = element.getBoundingClientRect()
+        return {
+          height: bounds.height,
+          top: viewport.scrollTop + bounds.top - viewportBounds.top,
+        }
+      }
+
+      const targetTop = getVoiceFollowScrollTarget({
+        activeBlock: getScrollBounds(activeSegment),
+        previousBlock: previousRecordableBlock
+          ? getScrollBounds(
+              segmentRefs.current[previousRecordableBlock.segmentIndex],
+            )
+          : null,
+        viewportHeight: viewport.clientHeight,
+        viewportScrollHeight: viewport.scrollHeight,
+      })
+
+      viewport.scrollTo({
+        behavior: VOICE_FOLLOW_SCROLL_BEHAVIOR,
+        top: targetTop,
+      })
+      isVoiceScrollingRef.current = true
+      window.cancelAnimationFrame(voiceScrollFrameRef.current)
+      voiceScrollFrameRef.current = window.requestAnimationFrame(() => {
+        isVoiceScrollingRef.current = false
+      })
+
+      return true
+    },
+    [trackableBlocks],
+  )
+
+  const startRecordingTake = useCallback(
+    (sectionId) => {
+      const take = recordingProgress.startTake(sectionId)
+      if (!take) return null
+
+      const recordableIndex = recordingProgress.sections.findIndex(
+        (section) => section.id === sectionId,
+      )
+      if (recordableIndex >= 0) {
+        setCurrentVoiceBlock(recordableIndex)
+        scrollToRecordableBlock(recordableIndex)
+      }
+
+      startCountdown(() => {
+        recordingProgress.clearActiveTake()
+        const completionAction = getTakeCompletionAction({
+          isVoiceEnabled: voiceFollow.isEnabled,
+          scrollMode,
+        })
+
+        if (completionAction === 'voice-follow') {
+          voiceFollow.enable()
+        } else if (completionAction === 'timed-scroll') {
+          controls.play(false)
+        }
+      })
+
+      return take
+    },
+    [
+      controls,
+      recordingProgress,
+      scrollToRecordableBlock,
+      scrollMode,
+      setCurrentVoiceBlock,
+      startCountdown,
+      voiceFollow,
+    ],
+  )
+
+  const resumeRecording = useCallback(() => {
+    const target = recordingProgress.resumeTarget
+    if (!target) return null
+
+    return startRecordingTake(target.id)
+  }, [recordingProgress.resumeTarget, startRecordingTake])
+
   useEffect(() => {
     if (!speakerColorsAreEqual(speakerColors, normalizedSpeakerColors)) {
       setSpeakerColors(normalizedSpeakerColors)
@@ -386,6 +491,8 @@ export default function TeleprompterView() {
   return (
     <main
       className={`teleprompter ${settings.focusMode ? 'teleprompter--focus' : ''} ${
+        recordingProgress.sections.length ? 'teleprompter--recording-open' : ''
+      } ${
         voiceFollow.diagnostics.enabled && isDiagnosticsOpen
           ? 'teleprompter--diagnostics-open'
           : ''
@@ -477,6 +584,27 @@ export default function TeleprompterView() {
         </div>
       ) : null}
 
+      {recordingProgress.sections.length ? (
+        <RecordingProgressPanel
+          activeTake={recordingProgress.activeTake}
+          goodCount={recordingProgress.goodCount}
+          isCountdownActive={countdownValue !== null}
+          isComplete={recordingProgress.isComplete}
+          notRecordedCount={recordingProgress.notRecordedCount}
+          onResumeRecording={resumeRecording}
+          onSelectSection={recordingProgress.setSelectedSectionId}
+          onSetNote={recordingProgress.setSectionNote}
+          onSetStatus={recordingProgress.setSectionStatus}
+          onStartTake={startRecordingTake}
+          redoCount={recordingProgress.redoCount}
+          progressPercent={recordingProgress.progressPercent}
+          resumeTarget={recordingProgress.resumeTarget}
+          sections={recordingProgress.sections}
+          selectedSection={recordingProgress.selectedSection}
+          selectedSectionId={recordingProgress.selectedSectionId}
+        />
+      ) : null}
+
       <VoiceFollowDiagnosticsPanel
         diagnostics={voiceFollow.diagnostics}
         isOpen={isDiagnosticsOpen}
@@ -507,11 +635,10 @@ export default function TeleprompterView() {
         </div>
       </section>
 
-      {countdownValue ? (
-        <div aria-live="assertive" className="countdown-overlay">
-          <span>{countdownValue}</span>
-        </div>
-      ) : null}
+      <CountdownOverlay
+        countdownValue={countdownValue}
+        takeNumber={recordingProgress.activeTake?.takeNumber}
+      />
 
       <FloatingTrackpad
         isActive={
