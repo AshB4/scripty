@@ -58,6 +58,7 @@ import {
   createTrackableBlocks,
 } from '../voiceFollow/voiceFollowMatcher.js'
 import TeleprompterScript from './TeleprompterScript.jsx'
+import { resolveTeleprompterSegmentModel } from '../preparedSegments.js'
 
 export default function TeleprompterView() {
   const navigate = useNavigate()
@@ -90,10 +91,20 @@ export default function TeleprompterView() {
     () => resolveParserMode(script, scriptTypeOverride),
     [script, scriptTypeOverride],
   )
-  const segments = useMemo(
+  const parserSegments = useMemo(
     () => parseScript(script, { scriptType: parserMode }),
     [parserMode, script],
   )
+  const teleprompterSegmentModel = useMemo(
+    () =>
+      resolveTeleprompterSegmentModel({
+        parserMode,
+        parserSegments,
+        script,
+      }),
+    [parserMode, parserSegments, script],
+  )
+  const { finalizedPrepareResult, reminders, segments } = teleprompterSegmentModel
   const speakers = useMemo(() => getSpeakers(segments), [segments])
   const normalizedSpeakerColors = useMemo(
     () => normalizeSpeakerColors(speakerColors, speakers),
@@ -490,6 +501,7 @@ export default function TeleprompterView() {
 
   return (
     <main
+      data-prepare-status={finalizedPrepareResult ? 'finalized' : 'unprepared'}
       className={`teleprompter ${settings.focusMode ? 'teleprompter--focus' : ''} ${
         recordingProgress.sections.length ? 'teleprompter--recording-open' : ''
       } ${
@@ -623,6 +635,19 @@ export default function TeleprompterView() {
         <div
           className={`teleprompter__content ${settings.mirror ? 'teleprompter__content--mirrored' : ''}`}
         >
+          {reminders.length ? (
+            <section
+              aria-labelledby="teleprompter-reminders-title"
+              className="teleprompter-reminders"
+            >
+              <h2 id="teleprompter-reminders-title">Reminders</h2>
+              <ul>
+                {reminders.map((reminder) => (
+                  <li key={reminder.id}>{reminder.text}</li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
           <TeleprompterScript
   activeSegmentIndex={activeSegmentIndex}
   normalizedSpeakerColors={normalizedSpeakerColors}

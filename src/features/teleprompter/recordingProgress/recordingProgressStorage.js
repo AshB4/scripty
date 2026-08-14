@@ -1,24 +1,10 @@
+import { getScriptFingerprint } from '../../scripts/scriptFingerprint.js'
+
 const STORAGE_KEY = 'scripty.recordingProgress'
 const STORAGE_VERSION = 1
 
-function collapseWhitespace(value) {
-  return String(value ?? '').replace(/\s+/g, ' ').trim()
-}
-
-function hashText(value) {
-  let hash = 2166136261
-  const text = String(value ?? '')
-
-  for (let index = 0; index < text.length; index += 1) {
-    hash ^= text.charCodeAt(index)
-    hash = Math.imul(hash, 16777619)
-  }
-
-  return (hash >>> 0).toString(36)
-}
-
 export function getRecordingProgressFingerprint(script, parserMode = 'Auto') {
-  return `${parserMode}:${hashText(collapseWhitespace(script))}`
+  return getScriptFingerprint(script, parserMode)
 }
 
 function isValidStatus(value) {
@@ -126,4 +112,3 @@ export function removeRecordingProgress(script, parserMode = 'Auto') {
 export function normalizeRecordingProgressEntry(entry) {
   return normalizeEntry(entry)
 }
-

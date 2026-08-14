@@ -2,11 +2,13 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { FileUp, Maximize2, Mic2, Play, Trash2 } from 'lucide-react'
 import Button from '../../components/Button.jsx'
+import AppHeader from '../../components/AppHeader.jsx'
 import Modal from '../../components/Modal.jsx'
-import scriptyIcon from '../../assets/scripty-icon-128.png'
 import { useLocalStorage } from '../../hooks/useLocalStorage.js'
 import ScriptDropzone from './ScriptDropzone.jsx'
 import ParsedScriptPreview from './ParsedScriptPreview.jsx'
+import PrepareForRecordingPanel from './prepare/PrepareForRecordingPanel.jsx'
+import { usePrepareForRecording } from './prepare/usePrepareForRecording.js'
 import ScriptAnalysis from './ScriptAnalysis.jsx'
 import ScriptInput from './ScriptInput.jsx'
 import { importScriptFile } from './scriptImport.js'
@@ -62,6 +64,7 @@ export default function ScriptWorkspace() {
     () => analyzeScript(segments, script, { parserMode }),
     [parserMode, script, segments],
   )
+  const prepare = usePrepareForRecording({ parserMode, script })
   const normalizedSpeakerColors = useMemo(
     () => normalizeSpeakerColors(speakerColors, speakers),
     [speakerColors, speakers],
@@ -142,40 +145,27 @@ export default function ScriptWorkspace() {
 
   return (
     <main className="workspace shell">
-      <header className="workspace__header">
-        <Link className="brand-link" to="/">
-          <img
-            alt=""
-            aria-hidden="true"
-            className="brand-mark brand-mark--image"
-            height="32"
-            src={scriptyIcon}
-            width="32"
-          />
-          <span>Scripty</span>
+      <AppHeader>
+        <Button
+          aria-label="Toggle fullscreen"
+          icon={Maximize2}
+          onClick={toggleFullscreen}
+          variant="ghost"
+        >
+          Fullscreen
+        </Button>
+        <Link
+          aria-disabled={!script.trim()}
+          className="button button--primary"
+          onClick={(event) => {
+            if (!script.trim()) event.preventDefault()
+          }}
+          to="/teleprompter"
+        >
+          <Play aria-hidden="true" size={18} />
+          <span>Start teleprompter</span>
         </Link>
-        <div className="workspace__header-actions">
-          <Button
-            aria-label="Toggle fullscreen"
-            icon={Maximize2}
-            onClick={toggleFullscreen}
-            variant="ghost"
-          >
-            Fullscreen
-          </Button>
-          <Link
-            aria-disabled={!script.trim()}
-            className="button button--primary"
-            onClick={(event) => {
-              if (!script.trim()) event.preventDefault()
-            }}
-            to="/teleprompter"
-          >
-            <Play aria-hidden="true" size={18} />
-            <span>Start teleprompter</span>
-          </Link>
-        </div>
-      </header>
+      </AppHeader>
 
       <section className="workspace__grid">
         <div className="workspace__main">
@@ -221,6 +211,7 @@ export default function ScriptWorkspace() {
             onTypeOverrideChange={setScriptTypeOverride}
             typeOverride={scriptTypeOverride}
           />
+          <PrepareForRecordingPanel prepare={prepare} />
           <section
             aria-label="Voice Follow browser beta"
             className="voice-follow-card"

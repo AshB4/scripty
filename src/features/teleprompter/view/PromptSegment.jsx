@@ -12,7 +12,20 @@ const promptBlockLabels = {
   transition: 'Transition',
 }
 
+const preparedPromptBlockLabels = {
+  'ai-video': 'AI video',
+  'b-roll': 'B-roll',
+  'camera-cut': 'Camera cut',
+  'image-graphic': 'Image / graphic',
+  'production-cue': 'Production cue',
+  prop: 'Prop',
+  'screen-recording': 'Screen recording',
+}
+
 function getPromptBlockLabel(block) {
+  if (preparedPromptBlockLabels[block.subtype]) {
+    return preparedPromptBlockLabels[block.subtype]
+  }
   if (block.type === 'direction' && block.subtype === 'audio') return 'Audio cue'
   if (block.type === 'direction' && block.subtype === 'visual') return 'Visual cue'
   if (block.type === 'direction' && block.subtype === 'display-cue') {
