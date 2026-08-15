@@ -64,6 +64,21 @@ export function getRecordingResumeTarget(sections = []) {
   )
 }
 
+export function getPickupSections(sections = []) {
+  return sections.filter(
+    (section) => section.status === RECORDING_STATUSES.REDO,
+  )
+}
+
+export function getPickupTarget(sections = [], selectedSectionId = null) {
+  const pickups = getPickupSections(sections)
+  return (
+    pickups.find((section) => section.id === selectedSectionId) ??
+    pickups[0] ??
+    null
+  )
+}
+
 export function incrementRecordingTake(entry = createDefaultEntry()) {
   return {
     ...entry,
@@ -220,6 +235,7 @@ export function useRecordingProgress({ parserMode, recordableBlocks, script }) {
     (section) => section.status === RECORDING_STATUSES.NOT_RECORDED,
   ).length
   const isComplete = sections.length > 0 && goodCount === sections.length
+  const pickupSections = getPickupSections(sections)
 
   return {
     activeTake,
@@ -227,6 +243,9 @@ export function useRecordingProgress({ parserMode, recordableBlocks, script }) {
     isComplete,
     notRecordedCount,
     progressPercent,
+    pickupCount: pickupSections.length,
+    pickupSections,
+    pickupTarget: getPickupTarget(sections, selectedSectionId),
     redoCount,
     resumeTarget: getRecordingResumeTarget(sections),
     sections,

@@ -35,6 +35,53 @@ test("normalizes case, punctuation, apostrophes, and whitespace", () => {
 	);
 });
 
+test("normalizes common number words and digits to equivalent tokens", () => {
+	assert.deepEqual(toVoiceWords("section two"), toVoiceWords("section 2"));
+	assert.deepEqual(toVoiceWords("section 2"), toVoiceWords("section two"));
+	assert.deepEqual(
+		toVoiceWords("ONE two THREE four FIVE six SEVEN eight NINE ten"),
+		["one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"],
+	);
+	assert.deepEqual(
+		toVoiceWords("1 2 3 4 5 6 7 8 9 10"),
+		["one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"],
+	);
+});
+
+test("number normalization leaves ordinary words and punctuation behavior unchanged", () => {
+	assert.equal(normalizeVoiceText("  Ordinary WORDS -- stay here!  "), "ordinary words stay here");
+});
+
+test("numeric speech selects the intended adjacent numbered line", () => {
+	const numberedBlocks = createTrackableBlocks([
+		{ id: "one", speaker: "N", text: "This is section one.", type: "dialogue" },
+		{ id: "two", speaker: "N", text: "This is section two.", type: "dialogue" },
+		{ id: "three", speaker: "N", text: "This is section three.", type: "dialogue" },
+	]);
+
+	const second = findVoiceMatch({
+		blocks: numberedBlocks,
+		currentIndex: 0,
+		transcript: "this is section 2",
+	});
+	const third = findVoiceMatch({
+		blocks: numberedBlocks,
+		currentIndex: 1,
+		transcript: "this is section 3",
+	});
+	const wordNumber = findVoiceMatch({
+		blocks: numberedBlocks,
+		currentIndex: 0,
+		transcript: "this is section two",
+	});
+
+	assert.equal(second.index, 1);
+	assert.equal(second.isImmediateMove, true);
+	assert.equal(third.index, 2);
+	assert.equal(third.isImmediateMove, true);
+	assert.equal(wordNumber.index, 1);
+});
+
 test("matches dialogue without using speaker names", () => {
 	assert.equal(blocks[0].words.includes("host"), false);
 
@@ -311,6 +358,18 @@ test("normalizes punctuation while calculating word progress", () => {
 			transcriptWords: toVoiceWords("Welcome to"),
 		}),
 		2,
+	);
+});
+
+test("numeric speech advances word progress through a written number", () => {
+	const blockWords = toVoiceWords("This is section two");
+
+	assert.equal(
+		getOrderedPrefixProgress({
+			blockWords,
+			transcriptWords: toVoiceWords("this is section 2"),
+		}),
+		blockWords.length,
 	);
 });
 

@@ -178,6 +178,49 @@ test('chaotic fixture keeps HF exact, UNKNOWN unknown, and tentative tentative',
   )
 })
 
+test('documents known local Prepare classification edge cases for later interpretation work', () => {
+  const cases = [
+    {
+      text: 'Use this while Jerod is interviewing so you can test everything except microphone input.',
+      currentLocalType: 'SPOKEN',
+      observedIssue: 'Meta/instructional text is treated as spoken.',
+    },
+    {
+      text: '## Test Script',
+      currentLocalType: 'SPOKEN',
+      observedIssue: 'A structural Markdown heading is treated as spoken.',
+    },
+    {
+      text: '[SCREEN RECORDING: open settings and change refresh interval]',
+      currentLocalType: 'PRODUCTION_CUE',
+      observedIssue: 'A screen-recording cue is treated as a generic production cue.',
+    },
+    {
+      text: 'Show graph from downloads - not sure which one yet',
+      currentLocalType: 'SPOKEN',
+      observedType: 'CREATOR_REMINDER',
+      observedIssue:
+        'Observed as a creator reminder in manual testing; it may represent a tentative image/graphic requirement.',
+    },
+  ]
+
+  for (const regressionCase of cases) {
+    const result = buildLocalPrepareResult(regressionCase.text)
+
+    assert.equal(result.segments.length, 1, regressionCase.observedIssue)
+    assert.equal(
+      result.segments[0].originalText,
+      regressionCase.text,
+      regressionCase.observedIssue,
+    )
+    assert.equal(
+      result.segments[0].type,
+      regressionCase.currentLocalType,
+      regressionCase.observedIssue,
+    )
+  }
+})
+
 test('known tentative requirements do not become clarifications', () => {
   const result = buildLocalPrepareResult(SEMI_STRUCTURED_CREATOR_SCRIPT)
   const tentativeRequirement = result.requirements.find(

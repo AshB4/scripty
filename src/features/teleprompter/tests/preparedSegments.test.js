@@ -165,6 +165,23 @@ test('reminders are separated without changing inline spoken or production order
   assert.deepEqual(result, original)
 })
 
+test('finalized Prepare reminders remain available to the top Reminders area', () => {
+  const script = 'ASH: Keep this line.\n\nRemember the original prop wording.'
+  const result = finalizedResult()
+  saveFinalizedPrepareResult(script, 'Auto', result)
+
+  const model = resolveTeleprompterSegmentModel({
+    parserMode: 'Auto',
+    parserSegments: parseScript(script),
+    script,
+  })
+
+  assert.deepEqual(model.reminders, [
+    { id: 'seg-8', text: 'get coffee mug before this part' },
+    { id: 'seg-10-reminder', text: 'show graph from downloads' },
+  ])
+})
+
 test('a finalized result without reminders produces no reminder section data', () => {
   const result = finalizedResult()
   result.segments = result.segments.filter(

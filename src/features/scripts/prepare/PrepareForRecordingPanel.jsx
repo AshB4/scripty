@@ -57,6 +57,11 @@ export default function PrepareForRecordingPanel({ prepare }) {
           <Link className="button button--primary" to="/scripts/review">
             <span>Review Preparation</span>
           </Link>
+          {isFinalized ? (
+            <Link className="button button--secondary" to="/scripts/checklist">
+              <span>Shoot Checklist</span>
+            </Link>
+          ) : null}
         </div>
       ) : null}
       <Button

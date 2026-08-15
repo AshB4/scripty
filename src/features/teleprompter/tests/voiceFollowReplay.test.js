@@ -968,3 +968,31 @@ test('replay: one combined recognition result should advance after a full next l
     'each changed result boundary should invoke the bounded matcher once',
   )
 })
+
+test('replay: numeric recognition advances from section one to section two', () => {
+  const numberedBlocks = [
+    'This is section one.',
+    'This is section two.',
+    'This is section three.',
+  ].map((text, index) => ({
+    id: `numbered-line-${index + 1}`,
+    segmentIndex: index,
+    text,
+    words: toVoiceWords(text),
+  }))
+  const replay = createReplay(numberedBlocks)
+  const result = replay.deliver(
+    {
+      resultIndex: 0,
+      results: [recognitionResult('this is section 2')],
+    },
+    1_000,
+  )
+
+  assert.deepEqual(result.processed.changedWords, ['this', 'is', 'section', 'two'])
+  assert.equal(result.match.index, 1)
+  assert.equal(result.match.isImmediateMove, true)
+  assert.equal(result.currentIndex, 1)
+  assert.deepEqual(result.moves, [1])
+  assert.equal(result.matchedWordCount, numberedBlocks[1].words.length)
+})

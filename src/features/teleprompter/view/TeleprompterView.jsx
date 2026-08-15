@@ -13,6 +13,7 @@ import Modal from '../../../components/Modal.jsx'
 import IconButton from '../../../components/IconButton.jsx'
 import scriptyIcon from '../../../assets/scripty-icon-128.png'
 import { useLocalStorage } from '../../../hooks/useLocalStorage.js'
+import { useReminderChecklist } from '../../scripts/checklist/useReminderChecklist.js'
 import SpeakerSettings from '../../scripts/SpeakerSettings.jsx'
 import {
   getSpeakers,
@@ -86,11 +87,18 @@ export default function TeleprompterView() {
     }
   })
   const [scrollMode, setScrollMode] = useState(SCROLL_MODES.TIMED)
+  const [pickupSession, setPickupSession] = useState({
+    contextKey: null,
+    isActive: false,
+  })
   const settings = resolveSettings(storedSettings)
   const parserMode = useMemo(
     () => resolveParserMode(script, scriptTypeOverride),
     [script, scriptTypeOverride],
   )
+  const pickupContextKey = `${parserMode}\u0000${script}`
+  const isPickupMode =
+    pickupSession.isActive && pickupSession.contextKey === pickupContextKey
   const parserSegments = useMemo(
     () => parseScript(script, { scriptType: parserMode }),
     [parserMode, script],
@@ -105,6 +113,11 @@ export default function TeleprompterView() {
     [parserMode, parserSegments, script],
   )
   const { finalizedPrepareResult, reminders, segments } = teleprompterSegmentModel
+  const reminderChecklist = useReminderChecklist({
+    parserMode,
+    reminders,
+    script,
+  })
   const speakers = useMemo(() => getSpeakers(segments), [segments])
   const normalizedSpeakerColors = useMemo(
     () => normalizeSpeakerColors(speakerColors, speakers),
@@ -396,10 +409,18 @@ export default function TeleprompterView() {
         scrollToRecordableBlock(recordableIndex)
       }
 
+      const shouldStartVoiceAfterCountdown =
+        scrollMode === SCROLL_MODES.VOICE
+      if (shouldStartVoiceAfterCountdown && voiceFollow.isEnabled) {
+        voiceFollow.disable()
+      }
+
       startCountdown(() => {
         recordingProgress.clearActiveTake()
         const completionAction = getTakeCompletionAction({
-          isVoiceEnabled: voiceFollow.isEnabled,
+          isVoiceEnabled: shouldStartVoiceAfterCountdown
+            ? false
+            : voiceFollow.isEnabled,
           scrollMode,
         })
 
@@ -429,6 +450,53 @@ export default function TeleprompterView() {
 
     return startRecordingTake(target.id)
   }, [recordingProgress.resumeTarget, startRecordingTake])
+
+  const startPickups = useCallback(() => {
+    const target = isPickupMode
+      ? recordingProgress.pickupTarget
+      : recordingProgress.pickupSections[0] ?? null
+    if (!target) return null
+
+    setPickupSession({ contextKey: pickupContextKey, isActive: true })
+    return startRecordingTake(target.id)
+  }, [
+    isPickupMode,
+    pickupContextKey,
+    recordingProgress.pickupSections,
+    recordingProgress.pickupTarget,
+    startRecordingTake,
+  ])
+
+  const setRecordingStatus = useCallback(
+    (sectionId, status) => {
+      const isCurrentPickup = recordingProgress.pickupSections.some(
+        (section) => section.id === sectionId,
+      )
+      const nextPickup =
+        isPickupMode && isCurrentPickup && status === 'good'
+          ? recordingProgress.pickupSections.find(
+              (section) => section.id !== sectionId,
+            ) ?? null
+          : null
+
+      recordingProgress.setSectionStatus(sectionId, status)
+
+      if (!nextPickup) return
+      recordingProgress.setSelectedSectionId(nextPickup.id)
+      const nextIndex = recordingProgress.sections.findIndex(
+        (section) => section.id === nextPickup.id,
+      )
+      if (nextIndex < 0) return
+      setCurrentVoiceBlock(nextIndex)
+      scrollToRecordableBlock(nextIndex)
+    },
+    [
+      isPickupMode,
+      recordingProgress,
+      scrollToRecordableBlock,
+      setCurrentVoiceBlock,
+    ],
+  )
 
   useEffect(() => {
     if (!speakerColorsAreEqual(speakerColors, normalizedSpeakerColors)) {
@@ -602,12 +670,16 @@ export default function TeleprompterView() {
           goodCount={recordingProgress.goodCount}
           isCountdownActive={countdownValue !== null}
           isComplete={recordingProgress.isComplete}
+          isPickupMode={isPickupMode}
           notRecordedCount={recordingProgress.notRecordedCount}
           onResumeRecording={resumeRecording}
           onSelectSection={recordingProgress.setSelectedSectionId}
           onSetNote={recordingProgress.setSectionNote}
-          onSetStatus={recordingProgress.setSectionStatus}
+          onSetStatus={setRecordingStatus}
+          onStartPickups={startPickups}
           onStartTake={startRecordingTake}
+          pickupCount={recordingProgress.pickupCount}
+          pickupTarget={recordingProgress.pickupTarget}
           redoCount={recordingProgress.redoCount}
           progressPercent={recordingProgress.progressPercent}
           resumeTarget={recordingProgress.resumeTarget}
@@ -635,15 +707,24 @@ export default function TeleprompterView() {
         <div
           className={`teleprompter__content ${settings.mirror ? 'teleprompter__content--mirrored' : ''}`}
         >
-          {reminders.length ? (
+          {reminderChecklist.items.length ? (
             <section
               aria-labelledby="teleprompter-reminders-title"
               className="teleprompter-reminders"
             >
               <h2 id="teleprompter-reminders-title">Reminders</h2>
               <ul>
-                {reminders.map((reminder) => (
-                  <li key={reminder.id}>{reminder.text}</li>
+                {reminderChecklist.items.map((reminder) => (
+                  <li key={reminder.id}>
+                    <label>
+                      <input
+                        checked={reminder.completed}
+                        onChange={() => reminderChecklist.toggle(reminder.id)}
+                        type="checkbox"
+                      />
+                      <span>{reminder.text}</span>
+                    </label>
+                  </li>
                 ))}
               </ul>
             </section>

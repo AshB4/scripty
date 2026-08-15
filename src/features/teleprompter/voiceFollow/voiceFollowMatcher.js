@@ -9,14 +9,31 @@ export const VOICE_MATCH_THRESHOLDS = {
   skipStep: 0.035,
 }
 const SKIPPABLE_PROGRESS_WORDS = new Set(['a', 'an', 'the'])
+const VOICE_NUMBER_TOKENS = {
+  1: 'one',
+  2: 'two',
+  3: 'three',
+  4: 'four',
+  5: 'five',
+  6: 'six',
+  7: 'seven',
+  8: 'eight',
+  9: 'nine',
+  10: 'ten',
+}
 
 export function normalizeVoiceText(value) {
-  return String(value ?? '')
+  const normalized = String(value ?? '')
     .toLowerCase()
     .replace(/[^a-z0-9'\s]/g, ' ')
     .replace(/'/g, '')
     .replace(/\s+/g, ' ')
     .trim()
+
+  return normalized
+    .split(' ')
+    .map((word) => VOICE_NUMBER_TOKENS[word] ?? word)
+    .join(' ')
 }
 
 export function toVoiceWords(value) {

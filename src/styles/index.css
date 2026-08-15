@@ -1203,6 +1203,246 @@ svg {
   background: var(--surface);
 }
 
+.shoot-checklist {
+  min-height: 100vh;
+  background: var(--background);
+}
+
+.shoot-checklist__content {
+  width: min(100% - 32px, 920px);
+  padding-block: 52px 72px;
+}
+
+.shoot-checklist__intro {
+  margin-bottom: 30px;
+}
+
+.shoot-checklist__heading-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.shoot-checklist__heading-row > div {
+  min-width: 0;
+}
+
+.shoot-checklist__intro h1 {
+  margin: 8px 0 10px;
+  font-size: clamp(2rem, 5vw, 3.25rem);
+  line-height: 1.08;
+}
+
+.shoot-checklist__intro p,
+.shoot-checklist__section-heading p,
+.shoot-checklist__empty p,
+.shoot-checklist__no-items {
+  margin: 0;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.shoot-checklist__body {
+  display: grid;
+  gap: 24px;
+}
+
+.shoot-checklist__progress {
+  display: grid;
+  grid-template-columns: auto minmax(120px, 1fr) auto;
+  align-items: center;
+  gap: 18px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+}
+
+.shoot-checklist__progress > div:first-child {
+  display: grid;
+  gap: 2px;
+}
+
+.shoot-checklist__progress strong {
+  font-variant-numeric: tabular-nums;
+}
+
+.shoot-checklist__progress span {
+  color: var(--text-secondary);
+  font-size: 0.76rem;
+}
+
+.shoot-checklist__progress-track {
+  height: 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #1f2937;
+}
+
+.shoot-checklist__progress-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 180ms ease;
+}
+
+.shoot-checklist__items {
+  display: grid;
+  gap: 16px;
+  padding: 24px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+}
+
+.shoot-checklist__section-heading h2,
+.shoot-checklist__empty h2 {
+  margin: 0 0 5px;
+  font-size: 1.15rem;
+}
+
+.shoot-checklist__section-heading p,
+.shoot-checklist__empty p,
+.shoot-checklist__no-items {
+  font-size: 0.82rem;
+}
+
+.shoot-checklist__list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.shoot-checklist__item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 68px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--background);
+}
+
+.shoot-checklist__item--tentative {
+  border-color: rgba(251, 191, 36, 0.34);
+  background: rgba(251, 191, 36, 0.04);
+}
+
+.shoot-checklist__toggle {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid #475569;
+  border-radius: 5px;
+  background: transparent;
+  color: #082f49;
+  cursor: pointer;
+}
+
+.shoot-checklist__item--complete .shoot-checklist__toggle {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.shoot-checklist__item-copy {
+  min-width: 0;
+}
+
+.shoot-checklist__item-copy p {
+  margin: 5px 0 0;
+  line-height: 1.45;
+}
+
+.shoot-checklist__item--complete .shoot-checklist__item-copy p {
+  color: var(--text-secondary);
+  text-decoration: line-through;
+}
+
+.shoot-checklist__item-meta {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.shoot-checklist__item-meta span,
+.shoot-checklist__item-meta small {
+  padding: 3px 6px;
+  border-radius: 4px;
+  background: rgba(56, 189, 248, 0.1);
+  color: var(--accent);
+  font-size: 0.64rem;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
+.shoot-checklist__item-meta small {
+  background: rgba(251, 191, 36, 0.12);
+  color: #fde68a;
+}
+
+.shoot-checklist__item .icon-button {
+  width: 34px;
+  height: 34px;
+  color: var(--text-secondary);
+}
+
+.shoot-checklist__add {
+  display: grid;
+  gap: 7px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.shoot-checklist__add label {
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.shoot-checklist__add > div {
+  display: flex;
+  gap: 8px;
+}
+
+.shoot-checklist__add input {
+  width: 100%;
+  min-width: 0;
+  padding: 11px 12px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  outline: none;
+  background: var(--background);
+  color: var(--text-primary);
+  font: inherit;
+}
+
+.shoot-checklist__add input:focus {
+  border-color: var(--accent);
+}
+
+.shoot-checklist__empty {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 18px;
+  padding: 24px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+}
+
+.shoot-checklist__empty > svg {
+  color: var(--accent);
+}
+
 .prepare-card__group {
   display: grid;
   gap: 7px;
@@ -2108,6 +2348,37 @@ svg {
   color: var(--accent);
 }
 
+.recording-progress__pickups {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(56, 189, 248, 0.035);
+}
+
+.recording-progress__pickups--active {
+  background: rgba(56, 189, 248, 0.08);
+}
+
+.recording-progress__pickups > div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.recording-progress__pickups span {
+  line-height: 1.4;
+}
+
+.recording-progress__pickups .button {
+  min-height: 34px;
+  flex: 0 0 auto;
+  padding-inline: 10px;
+  font-size: 0.72rem;
+}
+
 .recording-progress__sections {
   display: grid;
   gap: 8px;
@@ -2475,7 +2746,8 @@ svg {
   display: grid;
   gap: 5px;
   margin: 0;
-  padding-left: 18px;
+  padding: 0;
+  list-style: none;
 }
 
 .teleprompter-reminders li {
@@ -2484,6 +2756,26 @@ svg {
   font-size: clamp(16px, calc(var(--prompter-font-size) * 0.34), 26px);
   line-height: 1.4;
   overflow-wrap: anywhere;
+}
+
+.teleprompter-reminders label {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.teleprompter-reminders input {
+  width: 18px;
+  height: 18px;
+  margin: 0.3em 0 0;
+  flex: 0 0 auto;
+  accent-color: var(--accent);
+}
+
+.teleprompter-reminders input:checked + span {
+  opacity: 0.62;
+  text-decoration: line-through;
 }
 
 .prompt-segment::before {
@@ -2667,7 +2959,6 @@ svg {
   place-items: center;
   padding: 24px;
   background: rgba(5, 7, 10, 0.66);
-  backdrop-filter: blur(2px);
   pointer-events: none;
 }
 
@@ -2799,6 +3090,10 @@ svg {
     width: min(100% - 48px, 1040px);
   }
 
+  .shoot-checklist__content {
+    width: min(100% - 48px, 920px);
+  }
+
   .script-guide__term-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -2897,7 +3192,8 @@ svg {
 
   .workspace > .app-header,
   .script-guide > .app-header,
-  .prepare-review > .app-header {
+  .prepare-review > .app-header,
+  .shoot-checklist > .app-header {
     align-items: flex-start;
     gap: 14px;
     padding-block: 14px;
@@ -2910,6 +3206,7 @@ svg {
 
   .script-guide > .app-header .brand-link span:last-child,
   .prepare-review > .app-header .brand-link span:last-child,
+  .shoot-checklist > .app-header .brand-link span:last-child,
   .workspace > .app-header .brand-link span:last-child {
     display: none;
   }
@@ -2983,6 +3280,47 @@ svg {
 
   .prepare-review__finalize .button {
     width: 100%;
+  }
+
+  .shoot-checklist__content {
+    padding-block: 36px 52px;
+  }
+
+  .shoot-checklist__heading-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .shoot-checklist__heading-row .button {
+    width: 100%;
+  }
+
+  .shoot-checklist__progress {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 12px;
+  }
+
+  .shoot-checklist__progress-track {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .shoot-checklist__items {
+    padding: 16px;
+  }
+
+  .shoot-checklist__item {
+    align-items: start;
+  }
+
+  .shoot-checklist__add > div {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .shoot-checklist__empty {
+    grid-template-columns: 1fr;
+    justify-items: start;
   }
 
   .workspace.shell {
@@ -3172,6 +3510,19 @@ svg {
     left: 12px;
     width: auto;
     max-height: min(40svh, 360px);
+  }
+
+  .recording-progress__pickups {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .recording-progress__pickups .button {
+    width: 100%;
+  }
+
+  .teleprompter--recording-open .floating-trackpad {
+    bottom: calc(min(40svh, 360px) + 24px);
   }
 
   .voice-diagnostics {
