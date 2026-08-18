@@ -4,6 +4,7 @@ import AppHeader from '../../../components/AppHeader.jsx'
 import {
   SCRIPT_GUIDE_EXAMPLE,
   SCRIPT_GUIDE_INLINE_CUES,
+  SCRIPT_GUIDE_PARAGRAPH_BLOCK_EXAMPLES,
   SCRIPT_GUIDE_RECORDING_EXAMPLE,
   SCRIPT_GUIDE_REMINDER_EXAMPLES,
   SCRIPT_GUIDE_STATUSES,
@@ -47,6 +48,37 @@ export default function ScriptGuidePage() {
             </p>
           </div>
           <pre className="script-guide__example"><code>{SCRIPT_GUIDE_EXAMPLE}</code></pre>
+          <div
+            className="script-guide__format-note"
+            aria-labelledby="paragraph-blocks-title"
+          >
+            <h3 id="paragraph-blocks-title">Paragraphs and text blocks</h3>
+            <p>
+              Scripty treats each paragraph as a separate spoken text block. A
+              blank line starts a new block. Keep sentences in the same
+              paragraph when you want them treated as one continuous recording
+              section.
+            </p>
+            <p>
+              Punctuation does not create separate blocks. Periods can separate
+              sentences inside the same paragraph without splitting the
+              recording section.
+            </p>
+            <div className="script-guide__block-examples">
+              <article>
+                <h4>One block</h4>
+                <pre className="script-guide__example">
+                  <code>{SCRIPT_GUIDE_PARAGRAPH_BLOCK_EXAMPLES.oneBlock}</code>
+                </pre>
+              </article>
+              <article>
+                <h4>Two blocks</h4>
+                <pre className="script-guide__example">
+                  <code>{SCRIPT_GUIDE_PARAGRAPH_BLOCK_EXAMPLES.twoBlocks}</code>
+                </pre>
+              </article>
+            </div>
+          </div>
           <div className="script-guide__format-note">
             <h3>Works with different script styles</h3>
             <p>
@@ -85,6 +117,26 @@ export default function ScriptGuidePage() {
                 <p>{step.description}</p>
               </article>
             ))}
+          </div>
+        </section>
+
+        <section className="script-guide__section" aria-labelledby="takes-title">
+          <div className="script-guide__section-copy">
+            <h2 id="takes-title">Recording takes</h2>
+            <p>
+              Select the section you want to record, then choose Start Take.
+              The highlighted card in Recording Progress is the section you are
+              currently working with.
+            </p>
+            <p>
+              After recording, choose Good Take if that section is usable or
+              Redo if it needs another attempt. Redo sections appear as pickups
+              so you can record them again later.
+            </p>
+            <p>
+              Resume Recording starts at the next unfinished section, checking
+              Redo sections before Not Recorded sections.
+            </p>
           </div>
         </section>
 

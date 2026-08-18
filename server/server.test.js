@@ -1,0 +1,197 @@
+import assert from 'node:assert/strict'
+import { Readable } from 'node:stream'
+import { test } from 'node:test'
+import { loadServerConfig } from './config.js'
+import {
+  createScriptyRequestHandler,
+  handleScriptyRequest,
+} from './index.js'
+
+async function request(handler, method, url, payload) {
+  let statusCode = null
+  let headers = null
+  let body = ''
+  const serialized = payload === undefined
+    ? null
+    : typeof payload === 'string'
+      ? payload
+      : JSON.stringify(payload)
+  const incoming = serialized == null ? Readable.from([]) : Readable.from([serialized])
+  incoming.method = method
+  incoming.url = url
+  incoming.headers = serialized == null
+    ? {}
+    : { 'content-length': String(Buffer.byteLength(serialized)) }
+
+  await handler(incoming, {
+    writeHead(nextStatusCode, nextHeaders) {
+      statusCode = nextStatusCode
+      headers = nextHeaders
+    },
+    end(value) {
+      body = String(value ?? '')
+    },
+  })
+
+  return {
+    body,
+    headers,
+    json: JSON.parse(body),
+    statusCode,
+  }
+}
+
+const validSnapshot = {
+  productionId: 'demo-script',
+  parserMode: 'Auto',
+  updatedAt: '2026-08-17T12:00:00.000Z',
+  items: [{
+    id: 'recording:A',
+    kind: 'recording',
+    sourceId: 'A',
+    status: 'good',
+    isComplete: true,
+    description: 'completed section',
+  }],
+}
+
+test('GET /api/health returns the expected JSON response', async () => {
+  const response = await request(handleScriptyRequest, 'GET', '/api/health')
+
+  assert.equal(response.statusCode, 200)
+  assert.equal(response.headers['Content-Type'], 'application/json; charset=utf-8')
+  assert.deepEqual(response.json, { status: 'ok' })
+})
+
+test('unknown API routes return JSON 404s', async () => {
+  const response = await request(handleScriptyRequest, 'GET', '/api/missing')
+
+  assert.equal(response.statusCode, 404)
+  assert.deepEqual(response.json, { error: 'not_found' })
+})
+
+test('server config reads backend and MCP settings with local defaults', () => {
+  assert.deepEqual(loadServerConfig({}), {
+    clickhouseMcpAuthToken: null,
+    clickhouseMcpUrl: 'http://127.0.0.1:8000/mcp',
+    port: 8787,
+  })
+  assert.deepEqual(loadServerConfig({
+    CLICKHOUSE_MCP_AUTH_TOKEN: 'test-token',
+    CLICKHOUSE_MCP_URL: 'https://mcp.example.test/mcp',
+    PORT: '9090',
+  }), {
+    clickhouseMcpAuthToken: 'test-token',
+    clickhouseMcpUrl: 'https://mcp.example.test/mcp',
+    port: 9090,
+  })
+  assert.throws(() => loadServerConfig({ PORT: 'nope' }), /PORT/)
+  assert.throws(
+    () => loadServerConfig({ CLICKHOUSE_MCP_URL: 'not a url' }),
+    /CLICKHOUSE_MCP_URL/,
+  )
+})
+
+test('POST production-memory sync validates and forwards a normalized snapshot', async () => {
+  let receivedSnapshot = null
+  const handler = createScriptyRequestHandler({
+    productionMemoryStore: {
+      async sync(snapshot) {
+        receivedSnapshot = snapshot
+        return { itemCount: 1, removedItemCount: 0, version: '1000' }
+      },
+    },
+  })
+
+  const response = await request(
+    handler,
+    'POST',
+    '/api/production-memory/sync',
+    { ...validSnapshot, ignoredField: 'not forwarded' },
+  )
+
+  assert.equal(response.statusCode, 200)
+  assert.deepEqual(response.json, {
+    productionId: 'demo-script',
+    itemCount: 1,
+    removedItemCount: 0,
+    version: '1000',
+  })
+  assert.equal(receivedSnapshot.ignoredField, undefined)
+})
+
+test('POST production-memory sync rejects malformed payloads', async () => {
+  let calls = 0
+  const handler = createScriptyRequestHandler({
+    productionMemoryStore: { async sync() { calls += 1 } },
+  })
+
+  const response = await request(
+    handler,
+    'POST',
+    '/api/production-memory/sync',
+    { ...validSnapshot, items: [{ ...validSnapshot.items[0], isComplete: false }] },
+  )
+
+  assert.equal(response.statusCode, 400)
+  assert.deepEqual(response.json, { error: 'invalid_snapshot' })
+  assert.equal(calls, 0)
+})
+
+test('production-memory routes return explicit generic errors for MCP failures', async () => {
+  const handler = createScriptyRequestHandler({
+    productionMemoryStore: {
+      async getOutstanding() { throw new Error('secret internal detail') },
+      async sync() { throw new Error('secret internal detail') },
+    },
+  })
+
+  const syncResponse = await request(
+    handler,
+    'POST',
+    '/api/production-memory/sync',
+    validSnapshot,
+  )
+  const readResponse = await request(
+    handler,
+    'GET',
+    '/api/production-memory/demo-script/outstanding',
+  )
+
+  assert.equal(syncResponse.statusCode, 502)
+  assert.deepEqual(syncResponse.json, { error: 'production_memory_sync_failed' })
+  assert.equal(readResponse.statusCode, 502)
+  assert.deepEqual(readResponse.json, { error: 'production_memory_read_failed' })
+  assert.doesNotMatch(syncResponse.body + readResponse.body, /secret internal detail/)
+})
+
+test('GET outstanding returns the store result for the decoded production id', async () => {
+  let receivedId = null
+  const items = [{
+    id: 'recording:B',
+    kind: 'recording',
+    sourceId: 'B',
+    status: 'redo',
+    isComplete: false,
+    description: 'redo section',
+    updatedAt: '2026-08-17 12:00:00.000',
+  }]
+  const handler = createScriptyRequestHandler({
+    productionMemoryStore: {
+      async getOutstanding(productionId) {
+        receivedId = productionId
+        return items
+      },
+    },
+  })
+
+  const response = await request(
+    handler,
+    'GET',
+    '/api/production-memory/demo%20script/outstanding',
+  )
+
+  assert.equal(response.statusCode, 200)
+  assert.equal(receivedId, 'demo script')
+  assert.deepEqual(response.json, { productionId: 'demo script', items })
+})

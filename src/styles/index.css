@@ -207,6 +207,12 @@ svg {
   line-height: 1.7;
 }
 
+.hero-copy__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 .button {
   display: inline-flex;
   min-height: 44px;
@@ -1735,6 +1741,24 @@ svg {
   line-height: 1.65;
 }
 
+.script-guide__block-examples {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.script-guide__block-examples h4 {
+  margin: 0 0 7px;
+  color: var(--text-primary);
+  font-size: 0.76rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.script-guide__block-examples .script-guide__example {
+  margin: 0;
+}
+
 .script-guide__source-note {
   display: grid;
   gap: 10px;
@@ -2274,6 +2298,10 @@ svg {
 }
 
 .teleprompter__diagnostics-button {
+  min-height: 42px;
+}
+
+.teleprompter__guide-link {
   min-height: 42px;
 }
 
@@ -3397,6 +3425,12 @@ svg {
     min-height: 38px;
     padding-inline: 9px;
     gap: 6px;
+    font-size: 0.72rem;
+  }
+
+  .teleprompter__guide-link {
+    min-height: 38px;
+    padding-inline: 9px;
     font-size: 0.72rem;
   }
 

@@ -25,10 +25,15 @@ export default function Hero() {
           <p className="hero-copy__lede">
             A modern browser-based teleprompter built for creators.
           </p>
-          <Link className="button button--primary" to="/scripts">
-            <span>Launch Scripty</span>
-            <ArrowRight aria-hidden="true" size={18} />
-          </Link>
+          <div className="hero-copy__actions">
+            <Link className="button button--primary" to="/scripts">
+              <span>Launch Scripty</span>
+              <ArrowRight aria-hidden="true" size={18} />
+            </Link>
+            <Link className="button button--secondary" to="/scripts/guide?from=home">
+              Script Guide
+            </Link>
+          </div>
         </div>
 
         <div className="hero-device" aria-hidden="true">

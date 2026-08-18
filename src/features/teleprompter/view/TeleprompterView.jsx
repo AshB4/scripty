@@ -13,6 +13,10 @@ import Modal from '../../../components/Modal.jsx'
 import IconButton from '../../../components/IconButton.jsx'
 import scriptyIcon from '../../../assets/scripty-icon-128.png'
 import { useLocalStorage } from '../../../hooks/useLocalStorage.js'
+import { buildProductionMemorySnapshot } from '../../productionMemory/productionMemorySnapshot.js'
+import { useProductionMemorySync } from '../../productionMemory/useProductionMemorySync.js'
+import { buildShootChecklistItems } from '../../scripts/checklist/shootChecklist.js'
+import { loadShootChecklistState } from '../../scripts/checklist/shootChecklistStorage.js'
 import { useReminderChecklist } from '../../scripts/checklist/useReminderChecklist.js'
 import SpeakerSettings from '../../scripts/SpeakerSettings.jsx'
 import {
@@ -132,6 +136,30 @@ export default function TeleprompterView() {
     recordableBlocks: trackableBlocks,
     script,
   })
+  const productionMemoryChecklistItems = useMemo(
+    () =>
+      buildShootChecklistItems(
+        finalizedPrepareResult?.requirements ?? [],
+        loadShootChecklistState(script, parserMode),
+      ),
+    [finalizedPrepareResult?.requirements, parserMode, script],
+  )
+  const productionMemorySnapshot = useMemo(
+    () =>
+      buildProductionMemorySnapshot({
+        checklistItems: productionMemoryChecklistItems,
+        parserMode,
+        recordingSections: recordingProgress.sections,
+        script,
+      }),
+    [
+      parserMode,
+      productionMemoryChecklistItems,
+      recordingProgress.sections,
+      script,
+    ],
+  )
+  useProductionMemorySync(productionMemorySnapshot)
   const voiceBlockIndexes = useMemo(
     () =>
       new Map(
@@ -604,6 +632,14 @@ export default function TeleprompterView() {
           >
             Back to Script
           </Button>
+          <Link
+            className="button button--ghost teleprompter__guide-link"
+            rel="noreferrer"
+            target="_blank"
+            to="/scripts/guide?from=teleprompter"
+          >
+            Script Guide
+          </Link>
           {voiceFollow.diagnostics.enabled ? (
             <Button
               className="teleprompter__diagnostics-button"

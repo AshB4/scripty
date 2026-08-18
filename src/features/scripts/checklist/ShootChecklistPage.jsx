@@ -5,7 +5,15 @@ import AppHeader from '../../../components/AppHeader.jsx'
 import Button from '../../../components/Button.jsx'
 import IconButton from '../../../components/IconButton.jsx'
 import { useLocalStorage } from '../../../hooks/useLocalStorage.js'
-import { resolveParserMode } from '../scriptParser.js'
+import { buildProductionMemorySnapshot } from '../../productionMemory/productionMemorySnapshot.js'
+import { useProductionMemorySync } from '../../productionMemory/useProductionMemorySync.js'
+import { createTrackableBlocks } from '../../teleprompter/voiceFollow/voiceFollowMatcher.js'
+import { resolveTeleprompterSegmentModel } from '../../teleprompter/preparedSegments.js'
+import {
+  buildRecordingProgressSections,
+} from '../../teleprompter/recordingProgress/useRecordingProgress.js'
+import { loadRecordingProgress } from '../../teleprompter/recordingProgress/recordingProgressStorage.js'
+import { parseScript, resolveParserMode } from '../scriptParser.js'
 import { PREPARE_TYPE_LABELS } from '../prepare/prepareLabels.js'
 import { usePrepareForRecording } from '../prepare/usePrepareForRecording.js'
 import { useShootChecklist } from './useShootChecklist.js'
@@ -23,11 +31,48 @@ export default function ShootChecklistPage() {
   )
   const prepare = usePrepareForRecording({ parserMode, script })
   const finalizedPrepareResult = prepare.finalizedResult
+  const parserSegments = useMemo(
+    () => parseScript(script, { scriptType: parserMode }),
+    [parserMode, script],
+  )
+  const teleprompterSegmentModel = useMemo(
+    () =>
+      resolveTeleprompterSegmentModel({
+        parserMode,
+        parserSegments,
+        script,
+      }),
+    [parserMode, parserSegments, script],
+  )
+  const productionMemoryRecordingSections = useMemo(
+    () =>
+      buildRecordingProgressSections(
+        createTrackableBlocks(teleprompterSegmentModel.segments),
+        loadRecordingProgress(script, parserMode).sections,
+      ),
+    [parserMode, script, teleprompterSegmentModel.segments],
+  )
   const checklist = useShootChecklist({
     parserMode,
     requirements: finalizedPrepareResult?.requirements ?? [],
     script,
   })
+  const productionMemorySnapshot = useMemo(
+    () =>
+      buildProductionMemorySnapshot({
+        checklistItems: checklist.items,
+        parserMode,
+        recordingSections: productionMemoryRecordingSections,
+        script,
+      }),
+    [
+      checklist.items,
+      parserMode,
+      productionMemoryRecordingSections,
+      script,
+    ],
+  )
+  useProductionMemorySync(productionMemorySnapshot)
 
   const addManualItem = (event) => {
     event.preventDefault()

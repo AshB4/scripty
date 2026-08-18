@@ -1,13 +1,17 @@
 export function getScriptGuideReturnPath(search) {
-  return new URLSearchParams(search).get('from') === 'review'
-    ? '/scripts/review'
-    : '/scripts'
+  const source = new URLSearchParams(search).get('from')
+  if (source === 'home') return '/'
+  if (source === 'review') return '/scripts/review'
+  if (source === 'teleprompter') return '/teleprompter'
+  return '/scripts'
 }
 
 export function getScriptGuideReturnLabel(search) {
-  return new URLSearchParams(search).get('from') === 'review'
-    ? 'Back to Review Preparation'
-    : 'Back to Prepare'
+  const source = new URLSearchParams(search).get('from')
+  if (source === 'home') return 'Back to Home'
+  if (source === 'review') return 'Back to Review Preparation'
+  if (source === 'teleprompter') return 'Back to Teleprompter'
+  return 'Back to Prepare'
 }
 
 export const SCRIPT_GUIDE_TERMS = Object.freeze([
@@ -148,3 +152,10 @@ maybe zoom in on the numbers???
 [B ROLL - typing on laptop]
 
 ASH: But look at what happened after we changed the setting.`
+
+export const SCRIPT_GUIDE_PARAGRAPH_BLOCK_EXAMPLES = Object.freeze({
+  oneBlock:
+    'I am reading this sentence at a normal speed. The next sentence continues without a paragraph break. These sentences remain part of the same spoken text block.',
+  twoBlocks:
+    'I am reading this sentence at a normal speed.\n\nThis paragraph begins after a blank line, so Scripty treats it as another spoken text block.',
+})

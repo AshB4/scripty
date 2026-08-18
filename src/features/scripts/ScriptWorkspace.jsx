@@ -146,6 +146,9 @@ export default function ScriptWorkspace() {
   return (
     <main className="workspace shell">
       <AppHeader>
+        <Link className="button button--ghost" to="/scripts/guide">
+          Script Guide
+        </Link>
         <Button
           aria-label="Toggle fullscreen"
           icon={Maximize2}
