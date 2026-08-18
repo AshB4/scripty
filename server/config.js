@@ -1,5 +1,7 @@
 const DEFAULT_PORT = 8787
 const DEFAULT_CLICKHOUSE_MCP_URL = 'http://127.0.0.1:8000/mcp'
+const DEFAULT_GOOGLE_CLOUD_LOCATION = 'us-central1'
+const DEFAULT_GOOGLE_AGENT_MODEL = 'gemini-2.5-flash'
 
 function parsePort(value, fallback = DEFAULT_PORT) {
   if (value == null || value === '') return fallback
@@ -10,6 +12,12 @@ function parsePort(value, fallback = DEFAULT_PORT) {
   }
 
   return port
+}
+
+function parseVertexAiEnabled(value) {
+  if (value == null || value === '') return true
+  if (String(value).toLowerCase() === 'true') return true
+  throw new Error('GOOGLE_GENAI_USE_VERTEXAI must be true.')
 }
 
 export function loadServerConfig(env = process.env) {
@@ -25,6 +33,10 @@ export function loadServerConfig(env = process.env) {
   return {
     clickhouseMcpAuthToken: env.CLICKHOUSE_MCP_AUTH_TOKEN || null,
     clickhouseMcpUrl,
+    googleAgentModel: env.GOOGLE_AGENT_MODEL || DEFAULT_GOOGLE_AGENT_MODEL,
+    googleCloudLocation: env.GOOGLE_CLOUD_LOCATION || DEFAULT_GOOGLE_CLOUD_LOCATION,
+    googleCloudProject: env.GOOGLE_CLOUD_PROJECT || null,
+    googleGenAiUseVertexAi: parseVertexAiEnabled(env.GOOGLE_GENAI_USE_VERTEXAI),
     port: parsePort(env.PORT),
   }
 }

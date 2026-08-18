@@ -74,21 +74,37 @@ test('server config reads backend and MCP settings with local defaults', () => {
   assert.deepEqual(loadServerConfig({}), {
     clickhouseMcpAuthToken: null,
     clickhouseMcpUrl: 'http://127.0.0.1:8000/mcp',
+    googleAgentModel: 'gemini-2.5-flash',
+    googleCloudLocation: 'us-central1',
+    googleCloudProject: null,
+    googleGenAiUseVertexAi: true,
     port: 8787,
   })
   assert.deepEqual(loadServerConfig({
     CLICKHOUSE_MCP_AUTH_TOKEN: 'test-token',
     CLICKHOUSE_MCP_URL: 'https://mcp.example.test/mcp',
+    GOOGLE_AGENT_MODEL: 'gemini-test-flash',
+    GOOGLE_CLOUD_LOCATION: 'global',
+    GOOGLE_CLOUD_PROJECT: 'test-project',
+    GOOGLE_GENAI_USE_VERTEXAI: 'true',
     PORT: '9090',
   }), {
     clickhouseMcpAuthToken: 'test-token',
     clickhouseMcpUrl: 'https://mcp.example.test/mcp',
+    googleAgentModel: 'gemini-test-flash',
+    googleCloudLocation: 'global',
+    googleCloudProject: 'test-project',
+    googleGenAiUseVertexAi: true,
     port: 9090,
   })
   assert.throws(() => loadServerConfig({ PORT: 'nope' }), /PORT/)
   assert.throws(
     () => loadServerConfig({ CLICKHOUSE_MCP_URL: 'not a url' }),
     /CLICKHOUSE_MCP_URL/,
+  )
+  assert.throws(
+    () => loadServerConfig({ GOOGLE_GENAI_USE_VERTEXAI: 'false' }),
+    /GOOGLE_GENAI_USE_VERTEXAI/,
   )
 })
 
@@ -136,6 +152,65 @@ test('POST production-memory sync rejects malformed payloads', async () => {
   assert.equal(response.statusCode, 400)
   assert.deepEqual(response.json, { error: 'invalid_snapshot' })
   assert.equal(calls, 0)
+})
+
+test('POST production-memory ask validates and returns the normalized ADK response', async () => {
+  let receivedRequest = null
+  const handler = createScriptyRequestHandler({
+    productionMemoryAgent: {
+      async ask(request) {
+        receivedRequest = request
+        return {
+          answer: 'Redo: redo section. Not Recorded: missing section.',
+          toolUse: { usedMcp: true, toolName: 'run_query' },
+        }
+      },
+    },
+  })
+
+  const response = await request(handler, 'POST', '/api/production-memory/ask', {
+    productionId: ' demo-script ',
+    question: ' What do I still need to finish? ',
+  })
+
+  assert.equal(response.statusCode, 200)
+  assert.deepEqual(receivedRequest, {
+    productionId: 'demo-script',
+    question: 'What do I still need to finish?',
+  })
+  assert.deepEqual(response.json, {
+    productionId: 'demo-script',
+    answer: 'Redo: redo section. Not Recorded: missing section.',
+    toolUse: { usedMcp: true, toolName: 'run_query' },
+  })
+})
+
+test('POST production-memory ask rejects malformed payloads and returns safe agent errors', async () => {
+  const invalidHandler = createScriptyRequestHandler({
+    productionMemoryAgent: { async ask() { throw new Error('should not run') } },
+  })
+  const invalidResponse = await request(
+    invalidHandler,
+    'POST',
+    '/api/production-memory/ask',
+    { productionId: 'demo-script' },
+  )
+
+  const failingHandler = createScriptyRequestHandler({
+    productionMemoryAgent: { async ask() { throw new Error('secret Gemini/MCP detail') } },
+  })
+  const failingResponse = await request(
+    failingHandler,
+    'POST',
+    '/api/production-memory/ask',
+    { productionId: 'demo-script', question: 'status' },
+  )
+
+  assert.equal(invalidResponse.statusCode, 400)
+  assert.deepEqual(invalidResponse.json, { error: 'invalid_production_memory_question' })
+  assert.equal(failingResponse.statusCode, 502)
+  assert.deepEqual(failingResponse.json, { error: 'production_memory_ask_failed' })
+  assert.doesNotMatch(failingResponse.body, /secret Gemini\/MCP detail/)
 })
 
 test('production-memory routes return explicit generic errors for MCP failures', async () => {

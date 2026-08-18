@@ -1,7 +1,12 @@
 import { createServer } from 'node:http'
 import { loadServerConfig } from './config.js'
 import { createMcpClickhouseClient } from './mcpClickhouseClient.js'
+import { createProductionMemoryAgent } from './productionMemoryAgent.js'
 import { createProductionMemoryStore } from './productionMemoryStore.js'
+import {
+  ProductionMemoryAskValidationError,
+  validateProductionMemoryAskRequest,
+} from './productionMemoryAskValidation.js'
 import {
   SnapshotValidationError,
   validateProductionMemorySnapshot,
@@ -58,7 +63,10 @@ function productionIdFromOutstandingPath(pathname) {
   }
 }
 
-export function createScriptyRequestHandler({ productionMemoryStore = null } = {}) {
+export function createScriptyRequestHandler({
+  productionMemoryAgent = null,
+  productionMemoryStore = null,
+} = {}) {
   return async function handleScriptyRequest(request, response) {
     const url = new URL(request.url ?? '/', 'http://localhost')
 
@@ -97,6 +105,40 @@ export function createScriptyRequestHandler({ productionMemoryStore = null } = {
       return
     }
 
+    if (
+      request.method === 'POST' &&
+      url.pathname === '/api/production-memory/ask'
+    ) {
+      if (!productionMemoryAgent) {
+        sendJson(response, 503, { error: 'production_memory_agent_unavailable' })
+        return
+      }
+
+      try {
+        const askRequest = validateProductionMemoryAskRequest(await readJsonBody(request))
+        const result = await productionMemoryAgent.ask(askRequest)
+        sendJson(response, 200, {
+          productionId: askRequest.productionId,
+          answer: result.answer,
+          toolUse: result.toolUse,
+        })
+      } catch (error) {
+        if (
+          error instanceof ProductionMemoryAskValidationError ||
+          error.statusCode === 400
+        ) {
+          sendJson(response, 400, { error: 'invalid_production_memory_question' })
+          return
+        }
+        if (error.statusCode === 413) {
+          sendJson(response, 413, { error: 'request_too_large' })
+          return
+        }
+        sendJson(response, 502, { error: 'production_memory_ask_failed' })
+      }
+      return
+    }
+
     const productionId = productionIdFromOutstandingPath(url.pathname)
     if (request.method === 'GET' && productionId) {
       if (!productionMemoryStore) {
@@ -119,8 +161,11 @@ export function createScriptyRequestHandler({ productionMemoryStore = null } = {
 
 export const handleScriptyRequest = createScriptyRequestHandler()
 
-export function createScriptyServer({ productionMemoryStore } = {}) {
-  return createServer(createScriptyRequestHandler({ productionMemoryStore }))
+export function createScriptyServer({ productionMemoryAgent, productionMemoryStore } = {}) {
+  return createServer(createScriptyRequestHandler({
+    productionMemoryAgent,
+    productionMemoryStore,
+  }))
 }
 
 export function startServer({
@@ -132,7 +177,13 @@ export function startServer({
   productionMemoryStore = createProductionMemoryStore({
     runQuery: mcpClient.runQuery,
   }),
-  server = createScriptyServer({ productionMemoryStore }),
+  productionMemoryAgent = createProductionMemoryAgent({
+    googleAgentModel: config.googleAgentModel,
+    googleCloudLocation: config.googleCloudLocation,
+    googleCloudProject: config.googleCloudProject,
+    mcpUrl: config.clickhouseMcpUrl,
+  }),
+  server = createScriptyServer({ productionMemoryAgent, productionMemoryStore }),
 } = {}) {
   server.listen(config.port, () => {
     console.log(`Scripty server listening on http://localhost:${config.port}`)
