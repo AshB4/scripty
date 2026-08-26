@@ -47,7 +47,12 @@ export function createPrepareWorkflow({
     save: savePrepareResult,
   },
 } = {}) {
-  let context = { fingerprint: '', parserMode: 'Auto', script: '' }
+  let context = {
+    fingerprint: '',
+    parserMode: 'Auto',
+    parserSegments: [],
+    script: '',
+  }
   let state = initialState
   let activeRequest = null
   const listeners = new Set()
@@ -57,11 +62,11 @@ export function createPrepareWorkflow({
     listeners.forEach((listener) => listener(state))
   }
 
-  const setContext = (script, parserMode = 'Auto') => {
+  const setContext = (script, parserMode = 'Auto', parserSegments = []) => {
     const fingerprint = getPrepareFingerprint(script, parserMode)
     if (context.fingerprint === fingerprint) return
 
-    context = { fingerprint, parserMode, script }
+    context = { fingerprint, parserMode, parserSegments, script }
     const stored = String(script ?? '').trim()
       ? storage.load(script, parserMode)
       : { finalizedAt: null, finalizedResult: null, result: null }
@@ -87,7 +92,7 @@ export function createPrepareWorkflow({
     emit({ ...state, error: '', status: 'loading' })
 
     activeRequest = Promise.resolve()
-      .then(() => provider.prepare(requestContext.script))
+      .then(() => provider.prepare(requestContext))
       .then((rawResult) => validatePrepareResult(rawResult))
       .then((result) => {
         storage.save(

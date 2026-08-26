@@ -29,12 +29,12 @@ export default function ShootChecklistPage() {
     () => resolveParserMode(script, scriptTypeOverride),
     [script, scriptTypeOverride],
   )
-  const prepare = usePrepareForRecording({ parserMode, script })
-  const finalizedPrepareResult = prepare.finalizedResult
   const parserSegments = useMemo(
     () => parseScript(script, { scriptType: parserMode }),
     [parserMode, script],
   )
+  const prepare = usePrepareForRecording({ parserMode, parserSegments, script })
+  const finalizedPrepareResult = prepare.finalizedResult
   const teleprompterSegmentModel = useMemo(
     () =>
       resolveTeleprompterSegmentModel({

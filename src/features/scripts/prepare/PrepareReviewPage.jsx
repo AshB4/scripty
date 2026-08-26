@@ -3,7 +3,7 @@ import { ArrowLeft } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
 import AppHeader from '../../../components/AppHeader.jsx'
 import { useLocalStorage } from '../../../hooks/useLocalStorage.js'
-import { resolveParserMode } from '../scriptParser.js'
+import { parseScript, resolveParserMode } from '../scriptParser.js'
 import PrepareReviewContent from './PrepareReviewContent.jsx'
 import { finalizePrepareAndNavigate } from './prepareWorkflow.js'
 import { usePrepareForRecording } from './usePrepareForRecording.js'
@@ -19,7 +19,11 @@ export default function PrepareReviewPage() {
     () => resolveParserMode(script, scriptTypeOverride),
     [script, scriptTypeOverride],
   )
-  const prepare = usePrepareForRecording({ parserMode, script })
+  const parserSegments = useMemo(
+    () => parseScript(script, { scriptType: parserMode }),
+    [parserMode, script],
+  )
+  const prepare = usePrepareForRecording({ parserMode, parserSegments, script })
 
   return (
     <main className="prepare-review">

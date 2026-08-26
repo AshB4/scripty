@@ -1,17 +1,6 @@
 import { validatePrepareResult } from './prepareContract.js'
 
 const tentativePattern = /\b(?:maybe|possibly|perhaps|idk)\b|\?{2,}/i
-const standaloneSpeakerPattern = /^([A-Za-z][A-Za-z0-9 _'-]{0,30}):\s*$/
-const inlineSpeakerPattern = /^([A-Za-z][A-Za-z0-9 _'-]{0,30}):\s+(.+)$/
-
-function isLikelySpeakerLabel(value) {
-  const words = value.trim().split(/\s+/)
-  return (
-    words.length <= 2 &&
-    (value === value.toUpperCase() || (words.length === 1 && value.length <= 4))
-  )
-}
-
 function classifyLine(text) {
   if (/^\[.*\bB[ -]?ROLL\b.*\]$/i.test(text) || /\bB[ -]?ROLL\b/i.test(text)) {
     return 'B_ROLL'
@@ -47,11 +36,12 @@ function classifyLine(text) {
   return 'SPOKEN'
 }
 
-function makeSegment(id, originalText, type, speaker = null) {
+function makeSegment(parserSegment, type) {
+  const originalText = parserSegment.text
   const tentative = tentativePattern.test(originalText)
   const needsClarification = type === 'UNKNOWN'
   return {
-    id: `seg-${id}`,
+    id: parserSegment.id,
     originalText,
     type,
     status:
@@ -60,7 +50,9 @@ function makeSegment(id, originalText, type, speaker = null) {
           ? 'tentative'
           : 'confirmed'
         : null,
-    speaker,
+    speaker: type === 'SPOKEN'
+      ? parserSegment.speakerLabel ?? parserSegment.speaker ?? null
+      : null,
     needsClarification,
     clarificationReason: needsClarification
       ? 'This instruction is ambiguous and needs creator clarification.'
@@ -69,60 +61,17 @@ function makeSegment(id, originalText, type, speaker = null) {
   }
 }
 
-export function buildLocalPrepareResult(script) {
-  const source = String(script ?? '')
-  const lines = source.split(/\r?\n/)
-  const segments = []
-  let currentSpeaker = null
-  let pendingSpeakerCue = null
-
-  lines.forEach((rawLine) => {
-    if (!rawLine.trim()) return
-
-    const text = rawLine.trim()
-    const standaloneSpeaker = text.match(standaloneSpeakerPattern)
-    if (standaloneSpeaker && isLikelySpeakerLabel(standaloneSpeaker[1])) {
-      currentSpeaker = standaloneSpeaker[1]
-      pendingSpeakerCue = rawLine
-      return
-    }
-
-    const inlineSpeaker = text.match(inlineSpeakerPattern)
-    if (inlineSpeaker && isLikelySpeakerLabel(inlineSpeaker[1])) {
-      currentSpeaker = inlineSpeaker[1]
-      pendingSpeakerCue = null
-      segments.push(
-        makeSegment(
-          segments.length + 1,
-          rawLine,
-          'SPOKEN',
-          currentSpeaker,
-        ),
-      )
-      return
-    }
-
-    const type = classifyLine(text)
-    const originalText =
-      pendingSpeakerCue && type === 'SPOKEN'
-        ? `${pendingSpeakerCue}\n${rawLine}`
-        : rawLine
-    segments.push(
-      makeSegment(
-        segments.length + 1,
-        originalText,
-        type,
-        type === 'SPOKEN' ? currentSpeaker : null,
-      ),
-    )
-    pendingSpeakerCue = null
-  })
-
-  if (pendingSpeakerCue) {
-    segments.push(
-      makeSegment(segments.length + 1, pendingSpeakerCue, 'UNKNOWN'),
-    )
+export function buildLocalPrepareResult({ parserSegments, script }) {
+  if (!String(script ?? '').trim()) {
+    throw new Error('A script is required before Prepare can run.')
   }
+  if (!Array.isArray(parserSegments)) {
+    throw new Error('Parser segments are required before Prepare can run.')
+  }
+
+  const segments = parserSegments.map((parserSegment) =>
+    makeSegment(parserSegment, classifyLine(parserSegment.text.trim())),
+  )
 
   const requirements = segments
     .filter(
@@ -155,14 +104,11 @@ export function buildLocalPrepareResult(script) {
 
 export function createLocalPrepareProvider({ delayMs = 280 } = {}) {
   return {
-    async prepare(script) {
-      if (!String(script ?? '').trim()) {
-        throw new Error('A script is required before Prepare can run.')
-      }
+    async prepare(context) {
       if (delayMs > 0) {
         await new Promise((resolve) => window.setTimeout(resolve, delayMs))
       }
-      return buildLocalPrepareResult(script)
+      return buildLocalPrepareResult(context)
     },
   }
 }

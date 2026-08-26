@@ -64,7 +64,11 @@ export default function ScriptWorkspace() {
     () => analyzeScript(segments, script, { parserMode }),
     [parserMode, script, segments],
   )
-  const prepare = usePrepareForRecording({ parserMode, script })
+  const prepare = usePrepareForRecording({
+    parserMode,
+    parserSegments: segments,
+    script,
+  })
   const normalizedSpeakerColors = useMemo(
     () => normalizeSpeakerColors(speakerColors, speakers),
     [speakerColors, speakers],

@@ -12,6 +12,7 @@ import {
   buildLocalPrepareResult,
   createLocalPrepareProvider,
 } from './localPrepareProvider.js'
+import { parseScript } from '../scriptParser.js'
 import {
   getPrepareFingerprint,
   loadFinalizedPrepareResult,
@@ -44,6 +45,14 @@ function createLocalStorage() {
     setItem(key, value) {
       store.set(key, String(value))
     },
+  }
+}
+
+function buildPrepareContext(script, parserMode = 'Auto') {
+  return {
+    parserMode,
+    parserSegments: parseScript(script, { scriptType: parserMode }),
+    script,
   }
 }
 
@@ -154,7 +163,7 @@ test('rejects malformed and null Prepare responses safely', () => {
 test('local Prepare leaves source text untouched and returns separate metadata', () => {
   const source = SEMI_STRUCTURED_CREATOR_SCRIPT
   const original = `${source}`
-  const result = buildLocalPrepareResult(source)
+  const result = buildLocalPrepareResult(buildPrepareContext(source))
 
   assert.equal(source, original)
   assert.notEqual(result, source)
@@ -165,8 +174,74 @@ test('local Prepare leaves source text untouched and returns separate metadata',
   )
 })
 
+test('local Prepare classifies parser-owned blocks, including multiline paragraphs', () => {
+  const script = `ASH: Okay, this is where things get weird.
+
+[cut to robot]
+
+ROBOT: You say that every episode.
+
+show screenshot of the dashboard here
+
+maybe zoom in on the numbers???
+
+This paragraph starts on one line
+and continues on another line.`
+  const context = buildPrepareContext(script)
+  const result = buildLocalPrepareResult(context)
+
+  assert.deepEqual(
+    result.segments.map(({ id, originalText }) => ({ id, originalText })),
+    context.parserSegments.map(({ id, text }) => ({ id, originalText: text })),
+  )
+  assert.equal(
+    result.segments.length < script.split(/\r?\n/).filter(Boolean).length, true)
+  assert.equal(result.segments.find((segment) => segment.id === '2-direction').type, 'CAMERA_CUT')
+  assert.equal(
+    result.segments.at(-1).originalText,
+    'This paragraph starts on one line and continues on another line.',
+  )
+  assert.equal(
+    result.requirements.every((requirement) =>
+      context.parserSegments.some((segment) => segment.id === requirement.segmentId),
+    ),
+    true,
+  )
+})
+
+test('workflow passes parser mode and parser-produced segments to Prepare providers', async () => {
+  const script = `ACT I
+
+MARA
+Welcome back.`
+  const parserMode = 'Stage play'
+  const parserSegments = parseScript(script, { scriptType: parserMode })
+  let receivedContext
+  const workflow = createPrepareWorkflow({
+    provider: {
+      async prepare(context) {
+        receivedContext = context
+        return buildLocalPrepareResult(context)
+      },
+    },
+  })
+
+  workflow.setContext(script, parserMode, parserSegments)
+  const result = await workflow.prepare()
+
+  assert.equal(receivedContext.script, script)
+  assert.equal(receivedContext.parserMode, parserMode)
+  assert.equal(receivedContext.parserSegments, parserSegments)
+  assert.deepEqual(
+    result.segments.map((segment) => segment.id),
+    parserSegments.map((segment) => segment.id),
+  )
+})
+
 test('chaotic fixture keeps HF exact, UNKNOWN unknown, and tentative tentative', () => {
-  const result = buildLocalPrepareResult(CHAOTIC_CREATOR_NOTES)
+  const result = buildLocalPrepareResult(
+    buildPrepareContext(CHAOTIC_CREATOR_NOTES),
+  )
   assert.equal(result.segments.some((segment) => segment.speaker === 'HF'), true)
   assert.equal(result.segments.some((segment) => segment.type === 'UNKNOWN'), true)
   assert.equal(
@@ -205,7 +280,9 @@ test('documents known local Prepare classification edge cases for later interpre
   ]
 
   for (const regressionCase of cases) {
-    const result = buildLocalPrepareResult(regressionCase.text)
+    const result = buildLocalPrepareResult(
+      buildPrepareContext(regressionCase.text),
+    )
 
     assert.equal(result.segments.length, 1, regressionCase.observedIssue)
     assert.equal(
@@ -222,7 +299,9 @@ test('documents known local Prepare classification edge cases for later interpre
 })
 
 test('known tentative requirements do not become clarifications', () => {
-  const result = buildLocalPrepareResult(SEMI_STRUCTURED_CREATOR_SCRIPT)
+  const result = buildLocalPrepareResult(
+    buildPrepareContext(SEMI_STRUCTURED_CREATOR_SCRIPT),
+  )
   const tentativeRequirement = result.requirements.find(
     (requirement) => requirement.status === 'tentative',
   )
@@ -495,7 +574,11 @@ test('loading button state disables immediately and success clears loading', asy
   const workflow = createPrepareWorkflow({
     provider: createLocalPrepareProvider({ delayMs: 0 }),
   })
-  workflow.setContext(SEMI_STRUCTURED_CREATOR_SCRIPT, 'Auto')
+  workflow.setContext(
+    SEMI_STRUCTURED_CREATOR_SCRIPT,
+    'Auto',
+    parseScript(SEMI_STRUCTURED_CREATOR_SCRIPT),
+  )
   const request = workflow.prepare()
 
   assert.deepEqual(
