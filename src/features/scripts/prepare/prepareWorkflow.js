@@ -1,5 +1,5 @@
 import { validatePrepareResult, PrepareValidationError } from './prepareContract.js'
-import { localPrepareProvider } from './localPrepareProvider.js'
+import { geminiPrepareProvider } from './geminiPrepareProvider.js'
 import {
   getPrepareFingerprint,
   loadPrepareState,
@@ -40,7 +40,7 @@ export function getPrepareButtonState({ hasScript, result, status }) {
 }
 
 export function createPrepareWorkflow({
-  provider = localPrepareProvider,
+  provider = geminiPrepareProvider,
   storage = {
     load: loadPrepareState,
     saveFinalized: saveFinalizedPrepareResult,

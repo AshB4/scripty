@@ -1,6 +1,11 @@
 import { createServer } from 'node:http'
 import { loadServerConfig } from './config.js'
 import { createMcpClickhouseClient } from './mcpClickhouseClient.js'
+import { createGeminiPrepareAgent } from './geminiPrepareAgent.js'
+import {
+  GeminiPrepareValidationError,
+  validateGeminiPrepareRequest,
+} from './geminiPrepareValidation.js'
 import { createProductionMemoryAgent } from './productionMemoryAgent.js'
 import { createProductionMemoryStore } from './productionMemoryStore.js'
 import {
@@ -64,6 +69,7 @@ function productionIdFromOutstandingPath(pathname) {
 }
 
 export function createScriptyRequestHandler({
+  geminiPrepareAgent = null,
   productionMemoryAgent = null,
   productionMemoryStore = null,
 } = {}) {
@@ -72,6 +78,34 @@ export function createScriptyRequestHandler({
 
     if (request.method === 'GET' && url.pathname === '/api/health') {
       sendJson(response, 200, { status: 'ok' })
+      return
+    }
+
+    if (request.method === 'POST' && url.pathname === '/api/prepare/classify') {
+      if (!geminiPrepareAgent) {
+        sendJson(response, 503, { error: 'gemini_prepare_unavailable' })
+        return
+      }
+
+      let prepareRequest
+      try {
+        prepareRequest = validateGeminiPrepareRequest(await readJsonBody(request))
+      } catch (error) {
+        if (error instanceof GeminiPrepareValidationError || error.statusCode === 400) {
+          sendJson(response, 400, { error: 'invalid_prepare_request' })
+          return
+        }
+        if (error.statusCode === 413) {
+          sendJson(response, 413, { error: 'request_too_large' })
+          return
+        }
+        sendJson(response, 502, { error: 'gemini_prepare_failed' })
+      }
+      try {
+        sendJson(response, 200, await geminiPrepareAgent.classify(prepareRequest))
+      } catch {
+        sendJson(response, 502, { error: 'gemini_prepare_failed' })
+      }
       return
     }
 
@@ -161,8 +195,13 @@ export function createScriptyRequestHandler({
 
 export const handleScriptyRequest = createScriptyRequestHandler()
 
-export function createScriptyServer({ productionMemoryAgent, productionMemoryStore } = {}) {
+export function createScriptyServer({
+  geminiPrepareAgent,
+  productionMemoryAgent,
+  productionMemoryStore,
+} = {}) {
   return createServer(createScriptyRequestHandler({
+    geminiPrepareAgent,
     productionMemoryAgent,
     productionMemoryStore,
   }))
@@ -183,7 +222,17 @@ export function startServer({
     googleCloudProject: config.googleCloudProject,
     mcpUrl: config.clickhouseMcpUrl,
   }),
-  server = createScriptyServer({ productionMemoryAgent, productionMemoryStore }),
+  geminiPrepareAgent = createGeminiPrepareAgent({
+    googleAgentModel: config.googleAgentModel,
+    googleCloudLocation: config.googleCloudLocation,
+    googleCloudProject: config.googleCloudProject,
+    googleGenAiUseVertexAi: config.googleGenAiUseVertexAi,
+  }),
+  server = createScriptyServer({
+    geminiPrepareAgent,
+    productionMemoryAgent,
+    productionMemoryStore,
+  }),
 } = {}) {
   server.listen(config.port, () => {
     console.log(`Scripty server listening on http://localhost:${config.port}`)

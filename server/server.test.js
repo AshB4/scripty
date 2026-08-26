@@ -70,6 +70,54 @@ test('unknown API routes return JSON 404s', async () => {
   assert.deepEqual(response.json, { error: 'not_found' })
 })
 
+test('POST Gemini Prepare forwards only validated parser segments to the server agent', async () => {
+  let receivedRequest = null
+  const handler = createScriptyRequestHandler({
+    geminiPrepareAgent: {
+      async classify(request) {
+        receivedRequest = request
+        return {
+          classifications: [
+            { id: '1-dialogue', status: null, type: 'SPOKEN' },
+          ],
+        }
+      },
+    },
+  })
+
+  const response = await request(handler, 'POST', '/api/prepare/classify', {
+    parserMode: 'Auto',
+    parserSegments: [{
+      id: '1-dialogue',
+      text: 'Original source text.',
+      type: 'dialogue',
+    }],
+    script: 'This raw script is not part of the Gemini boundary.',
+  })
+
+  assert.equal(response.statusCode, 200)
+  assert.equal(receivedRequest.script, undefined)
+  assert.deepEqual(response.json, {
+    classifications: [{ id: '1-dialogue', status: null, type: 'SPOKEN' }],
+  })
+})
+
+test('POST Gemini Prepare rejects malformed parser segments without calling Gemini', async () => {
+  let calls = 0
+  const handler = createScriptyRequestHandler({
+    geminiPrepareAgent: { async classify() { calls += 1 } },
+  })
+
+  const response = await request(handler, 'POST', '/api/prepare/classify', {
+    parserMode: 'Auto',
+    parserSegments: [{ id: 'parser-id', text: '', type: 'dialogue' }],
+  })
+
+  assert.equal(response.statusCode, 400)
+  assert.deepEqual(response.json, { error: 'invalid_prepare_request' })
+  assert.equal(calls, 0)
+})
+
 test('server config reads backend and MCP settings with local defaults', () => {
   assert.deepEqual(loadServerConfig({}), {
     clickhouseMcpAuthToken: null,

@@ -1,4 +1,8 @@
-import { validatePrepareResult } from './prepareContract.js'
+import {
+  isPrepareRequirementStatus,
+  isPrepareSegmentType,
+  validatePrepareResult,
+} from './prepareContract.js'
 
 const tentativePattern = /\b(?:maybe|possibly|perhaps|idk)\b|\?{2,}/i
 function classifyLine(text) {
@@ -36,9 +40,8 @@ function classifyLine(text) {
   return 'SPOKEN'
 }
 
-function makeSegment(parserSegment, type) {
+function makeSegment(parserSegment, { status, type }) {
   const originalText = parserSegment.text
-  const tentative = tentativePattern.test(originalText)
   const needsClarification = type === 'UNKNOWN'
   return {
     id: parserSegment.id,
@@ -46,9 +49,9 @@ function makeSegment(parserSegment, type) {
     type,
     status:
       type !== 'SPOKEN' && type !== 'UNKNOWN'
-        ? tentative
+        ? status ?? (tentativePattern.test(originalText)
           ? 'tentative'
-          : 'confirmed'
+          : 'confirmed')
         : null,
     speaker: type === 'SPOKEN'
       ? parserSegment.speakerLabel ?? parserSegment.speaker ?? null
@@ -61,7 +64,48 @@ function makeSegment(parserSegment, type) {
   }
 }
 
-export function buildLocalPrepareResult({ parserSegments, script }) {
+function validateClassifications(parserSegments, classifications) {
+  if (!Array.isArray(classifications) || classifications.length !== parserSegments.length) {
+    throw new Error('Prepare classifications must cover every parser segment.')
+  }
+
+  const parserSegmentIds = new Set(parserSegments.map((segment) => segment.id))
+  const classificationIds = new Set()
+  classifications.forEach((classification) => {
+    if (
+      !classification ||
+      !parserSegmentIds.has(classification.id) ||
+      !isPrepareSegmentType(classification.type)
+    ) {
+      throw new Error('Prepare classifications must use parser segment IDs.')
+    }
+    if (classificationIds.has(classification.id)) {
+      throw new Error('Prepare classifications cannot duplicate parser segment IDs.')
+    }
+    if (
+      (classification.type === 'SPOKEN' || classification.type === 'UNKNOWN') &&
+      classification.status != null
+    ) {
+      throw new Error('Prepare classifications have an invalid status.')
+    }
+    if (
+      classification.type !== 'SPOKEN' &&
+      classification.type !== 'UNKNOWN' &&
+      classification.status != null &&
+      !isPrepareRequirementStatus(classification.status)
+    ) {
+      throw new Error('Prepare classifications have an invalid status.')
+    }
+    classificationIds.add(classification.id)
+  })
+
+  return new Map(classifications.map((classification) => [classification.id, classification]))
+}
+
+export function buildPrepareResultFromClassifications({
+  parserSegments,
+  script,
+}, classifications) {
   if (!String(script ?? '').trim()) {
     throw new Error('A script is required before Prepare can run.')
   }
@@ -69,8 +113,9 @@ export function buildLocalPrepareResult({ parserSegments, script }) {
     throw new Error('Parser segments are required before Prepare can run.')
   }
 
+  const classificationsById = validateClassifications(parserSegments, classifications)
   const segments = parserSegments.map((parserSegment) =>
-    makeSegment(parserSegment, classifyLine(parserSegment.text.trim())),
+    makeSegment(parserSegment, classificationsById.get(parserSegment.id)),
   )
 
   const requirements = segments
@@ -100,6 +145,16 @@ export function buildLocalPrepareResult({ parserSegments, script }) {
     }))
 
   return validatePrepareResult({ segments, requirements, clarifications })
+}
+
+export function buildLocalPrepareResult(context) {
+  return buildPrepareResultFromClassifications(
+    context,
+    context.parserSegments.map((parserSegment) => ({
+      id: parserSegment.id,
+      type: classifyLine(parserSegment.text.trim()),
+    })),
+  )
 }
 
 export function createLocalPrepareProvider({ delayMs = 280 } = {}) {

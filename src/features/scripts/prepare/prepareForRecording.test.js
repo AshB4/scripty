@@ -12,6 +12,7 @@ import {
   buildLocalPrepareResult,
   createLocalPrepareProvider,
 } from './localPrepareProvider.js'
+import { createGeminiPrepareProvider } from './geminiPrepareProvider.js'
 import { parseScript } from '../scriptParser.js'
 import {
   getPrepareFingerprint,
@@ -236,6 +237,102 @@ Welcome back.`
     result.segments.map((segment) => segment.id),
     parserSegments.map((segment) => segment.id),
   )
+})
+
+test('Gemini Prepare classifications preserve parser IDs through the workflow', async () => {
+  const script = 'First paragraph\ncontinues here.\n\n[cut to robot]'
+  const context = buildPrepareContext(script)
+  let sentRequest
+  const provider = createGeminiPrepareProvider({
+    fetchImpl: async (_url, options) => {
+      sentRequest = JSON.parse(options.body)
+      return {
+        ok: true,
+        async json() {
+          return {
+            classifications: [
+              { id: context.parserSegments[0].id, status: null, type: 'SPOKEN' },
+              { id: context.parserSegments[1].id, status: 'confirmed', type: 'CAMERA_CUT' },
+            ],
+          }
+        },
+      }
+    },
+  })
+  const workflow = createPrepareWorkflow({ provider })
+  workflow.setContext(script, context.parserMode, context.parserSegments)
+
+  const result = await workflow.prepare()
+
+  assert.deepEqual(
+    result.segments.map((segment) => segment.id),
+    context.parserSegments.map((segment) => segment.id),
+  )
+  assert.equal(sentRequest.script, undefined)
+  assert.deepEqual(
+    sentRequest.parserSegments.map((segment) => segment.id),
+    context.parserSegments.map((segment) => segment.id),
+  )
+  assert.equal(script, 'First paragraph\ncontinues here.\n\n[cut to robot]')
+})
+
+test('Gemini Prepare falls back to local classification for invalid or failed AI responses', async () => {
+  const script = 'First paragraph\ncontinues here.\n\n[cut to robot]'
+  const context = buildPrepareContext(script)
+  const validClassifications = context.parserSegments.map((segment) => ({
+    id: segment.id,
+    status: segment.type === 'dialogue' ? null : 'confirmed',
+    type: segment.type === 'dialogue' ? 'SPOKEN' : 'CAMERA_CUT',
+  }))
+  const invalidResponses = [
+    { classifications: [{ id: 'invented', status: null, type: 'SPOKEN' }] },
+    { classifications: [validClassifications[0]] },
+    { classifications: [validClassifications[0], validClassifications[0]] },
+    { classifications: [{ ...validClassifications[0], type: 'OTHER' }, validClassifications[1]] },
+    { classifications: [{ id: validClassifications[0].id, type: 'SPOKEN' }, validClassifications[1]] },
+    null,
+  ]
+
+  for (const body of invalidResponses) {
+    let fallbackCalls = 0
+    const provider = createGeminiPrepareProvider({
+      fallbackProvider: {
+        async prepare(value) {
+          fallbackCalls += 1
+          return buildLocalPrepareResult(value)
+        },
+      },
+      fetchImpl: async () => ({
+        ok: true,
+        async json() {
+          if (body === null) throw new Error('malformed JSON')
+          return body
+        },
+      }),
+    })
+
+    const result = await provider.prepare(context)
+    assert.equal(fallbackCalls, 1)
+    assert.deepEqual(
+      result.segments.map((segment) => segment.id),
+      context.parserSegments.map((segment) => segment.id),
+    )
+  }
+
+  let fallbackCalls = 0
+  const failingProvider = createGeminiPrepareProvider({
+    fallbackProvider: {
+      async prepare(value) {
+        fallbackCalls += 1
+        return buildLocalPrepareResult(value)
+      },
+    },
+    fetchImpl: async () => {
+      throw new Error('Gemini unavailable')
+    },
+  })
+  await failingProvider.prepare(context)
+  assert.equal(fallbackCalls, 1)
 })
 
 test('chaotic fixture keeps HF exact, UNKNOWN unknown, and tentative tentative', () => {

@@ -28,6 +28,10 @@ export function isPrepareRequirementType(type) {
   return requirementTypes.has(type)
 }
 
+export function isPrepareSegmentType(type) {
+  return segmentTypes.has(type)
+}
+
 export function isPrepareRequirementStatus(status) {
   return requirementStatuses.has(status)
 }

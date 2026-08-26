@@ -92,7 +92,7 @@ export default function PrepareForRecordingPanel({ prepare }) {
       ) : null}
       {status === 'loading' ? (
         <p aria-live="polite" className="prepare-card__feedback" role="status">
-          Interpreting this script locally...
+          Preparing your script...
         </p>
       ) : null}
       {error ? (
