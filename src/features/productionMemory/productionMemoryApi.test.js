@@ -55,6 +55,29 @@ test('syncProductionMemorySnapshot normalizes failed responses', async () => {
   )
 })
 
+test('syncProductionMemorySnapshot surfaces safe server availability messages', async () => {
+  await assert.rejects(
+    syncProductionMemorySnapshot(
+      { productionId: 'demo', items: [] },
+      {
+        fetchImpl: async () => ({
+          ok: false,
+          status: 503,
+          async json() {
+            return {
+              error: 'production_memory_mcp_unavailable',
+              message: 'Production memory sync is unavailable because ClickHouse MCP cannot be reached.',
+            }
+          },
+        }),
+      },
+    ),
+    (error) => error instanceof ProductionMemoryApiError &&
+      error.status === 503 &&
+      error.message === 'Production memory sync is unavailable because ClickHouse MCP cannot be reached.',
+  )
+})
+
 test('syncProductionMemorySnapshot normalizes network failures', async () => {
   await assert.rejects(
     syncProductionMemorySnapshot(

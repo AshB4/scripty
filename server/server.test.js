@@ -6,6 +6,7 @@ import {
   createScriptyRequestHandler,
   handleScriptyRequest,
 } from './index.js'
+import { McpClickhouseError } from './mcpClickhouseClient.js'
 
 async function request(handler, method, url, payload) {
   let statusCode = null
@@ -121,7 +122,7 @@ test('POST Gemini Prepare rejects malformed parser segments without calling Gemi
 test('server config reads backend and MCP settings with local defaults', () => {
   assert.deepEqual(loadServerConfig({}), {
     clickhouseMcpAuthToken: null,
-    clickhouseMcpUrl: 'http://127.0.0.1:8000/mcp',
+    clickhouseMcpUrl: null,
     googleAgentModel: 'gemini-2.5-flash',
     googleCloudLocation: 'us-central1',
     googleCloudProject: null,
@@ -261,11 +262,48 @@ test('POST production-memory ask rejects malformed payloads and returns safe age
   assert.doesNotMatch(failingResponse.body, /secret Gemini\/MCP detail/)
 })
 
-test('production-memory routes return explicit generic errors for MCP failures', async () => {
+test('production-memory sync returns a safe 503 and logs unreachable ClickHouse MCP failures', async () => {
+  const connectionError = new Error('connect ECONNREFUSED 127.0.0.1:8000')
+  connectionError.code = 'ECONNREFUSED'
+  const upstreamError = new McpClickhouseError(
+    'Unable to execute query through mcp-clickhouse.',
+    { cause: connectionError },
+  )
+  const errors = []
   const handler = createScriptyRequestHandler({
+    logger: { error(...args) { errors.push(args) } },
+    productionMemoryStore: { async sync() { throw upstreamError } },
+  })
+
+  const response = await request(
+    handler,
+    'POST',
+    '/api/production-memory/sync',
+    validSnapshot,
+  )
+
+  assert.equal(response.statusCode, 503)
+  assert.deepEqual(response.json, {
+    error: 'production_memory_mcp_unavailable',
+    message: 'Production memory sync is unavailable because ClickHouse MCP cannot be reached.',
+  })
+  assert.equal(errors.length, 1)
+  assert.equal(errors[0][0], 'Production memory sync failed.')
+  assert.equal(errors[0][1], upstreamError)
+  assert.doesNotMatch(response.body, /ECONNREFUSED/)
+})
+
+test('production-memory routes map malformed MCP responses to safe 502 errors', async () => {
+  const errors = []
+  const handler = createScriptyRequestHandler({
+    logger: { error(...args) { errors.push(args) } },
     productionMemoryStore: {
-      async getOutstanding() { throw new Error('secret internal detail') },
-      async sync() { throw new Error('secret internal detail') },
+      async getOutstanding() {
+        throw new McpClickhouseError('mcp-clickhouse returned invalid JSON.')
+      },
+      async sync() {
+        throw new McpClickhouseError('mcp-clickhouse returned invalid JSON.')
+      },
     },
   })
 
@@ -282,10 +320,17 @@ test('production-memory routes return explicit generic errors for MCP failures',
   )
 
   assert.equal(syncResponse.statusCode, 502)
-  assert.deepEqual(syncResponse.json, { error: 'production_memory_sync_failed' })
+  assert.deepEqual(syncResponse.json, {
+    error: 'production_memory_sync_failed',
+    message: 'Production memory sync failed due to an upstream ClickHouse MCP error.',
+  })
   assert.equal(readResponse.statusCode, 502)
-  assert.deepEqual(readResponse.json, { error: 'production_memory_read_failed' })
-  assert.doesNotMatch(syncResponse.body + readResponse.body, /secret internal detail/)
+  assert.deepEqual(readResponse.json, {
+    error: 'production_memory_read_failed',
+    message: 'Production memory sync failed due to an upstream ClickHouse MCP error.',
+  })
+  assert.equal(errors.length, 2)
+  assert.doesNotMatch(syncResponse.body + readResponse.body, /invalid JSON/)
 })
 
 test('GET outstanding returns the store result for the decoded production id', async () => {

@@ -3,6 +3,7 @@ import { test } from 'node:test'
 import {
   McpClickhouseError,
   createMcpClickhouseClient,
+  isMcpClickhouseUnavailable,
 } from './mcpClickhouseClient.js'
 
 function clientWithResult(result, calls) {
@@ -84,4 +85,17 @@ test('MCP client surfaces connection and tool failures explicitly', async () => 
     toolFailure.runQuery('INSERT INTO example VALUES (1)'),
     (error) => error instanceof McpClickhouseError && /rejected/.test(error.message),
   )
+})
+
+test('MCP client identifies unavailable transport failures without treating tool errors as unavailable', () => {
+  const unavailableCause = new Error('connection refused')
+  unavailableCause.code = 'ECONNREFUSED'
+
+  assert.equal(isMcpClickhouseUnavailable(new McpClickhouseError(
+    'Unable to execute query through mcp-clickhouse.',
+    { cause: unavailableCause },
+  )), true)
+  assert.equal(isMcpClickhouseUnavailable(new McpClickhouseError(
+    'mcp-clickhouse returned an unexpected query result.',
+  )), false)
 })

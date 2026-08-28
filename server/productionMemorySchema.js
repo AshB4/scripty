@@ -95,12 +95,11 @@ ORDER BY kind, item_id
 export function getProductionMemorySyncStateSql(productionIdParameter = '{production_id:String}') {
   return `
 SELECT
-  item_id,
-  argMax(is_deleted, memory.version) AS is_deleted,
-  max(memory.version) AS version
-FROM ${PRODUCTION_MEMORY_TABLE} AS memory
-WHERE production_id = ${productionIdParameter}
-GROUP BY item_id
+${CURRENT_ITEM_COLUMNS}
+FROM
+(
+  ${currentRowsSubquery({ where: `production_id = ${productionIdParameter}` })}
+)
 ORDER BY item_id
 `.trim()
 }

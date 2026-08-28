@@ -1,6 +1,9 @@
 import { createServer } from 'node:http'
 import { loadServerConfig } from './config.js'
-import { createMcpClickhouseClient } from './mcpClickhouseClient.js'
+import {
+  createMcpClickhouseClient,
+  isMcpClickhouseUnavailable,
+} from './mcpClickhouseClient.js'
 import { createGeminiPrepareAgent } from './geminiPrepareAgent.js'
 import {
   GeminiPrepareValidationError,
@@ -68,8 +71,26 @@ function productionIdFromOutstandingPath(pathname) {
   }
 }
 
+function sendProductionMemoryFailure(response, operation, error, logger) {
+  logger.error(`Production memory ${operation} failed.`, error)
+
+  if (isMcpClickhouseUnavailable(error)) {
+    sendJson(response, 503, {
+      error: 'production_memory_mcp_unavailable',
+      message: 'Production memory sync is unavailable because ClickHouse MCP cannot be reached.',
+    })
+    return
+  }
+
+  sendJson(response, 502, {
+    error: `production_memory_${operation}_failed`,
+    message: 'Production memory sync failed due to an upstream ClickHouse MCP error.',
+  })
+}
+
 export function createScriptyRequestHandler({
   geminiPrepareAgent = null,
+  logger = console,
   productionMemoryAgent = null,
   productionMemoryStore = null,
 } = {}) {
@@ -134,7 +155,7 @@ export function createScriptyRequestHandler({
           sendJson(response, 413, { error: 'request_too_large' })
           return
         }
-        sendJson(response, 502, { error: 'production_memory_sync_failed' })
+        sendProductionMemoryFailure(response, 'sync', error, logger)
       }
       return
     }
@@ -183,8 +204,8 @@ export function createScriptyRequestHandler({
       try {
         const items = await productionMemoryStore.getOutstanding(productionId)
         sendJson(response, 200, { productionId, items })
-      } catch {
-        sendJson(response, 502, { error: 'production_memory_read_failed' })
+      } catch (error) {
+        sendProductionMemoryFailure(response, 'read', error, logger)
       }
       return
     }
@@ -209,31 +230,38 @@ export function createScriptyServer({
 
 export function startServer({
   config = loadServerConfig(),
-  mcpClient = createMcpClickhouseClient({
-    authToken: config.clickhouseMcpAuthToken,
-    mcpUrl: config.clickhouseMcpUrl,
-  }),
-  productionMemoryStore = createProductionMemoryStore({
-    runQuery: mcpClient.runQuery,
-  }),
-  productionMemoryAgent = createProductionMemoryAgent({
-    googleAgentModel: config.googleAgentModel,
-    googleCloudLocation: config.googleCloudLocation,
-    googleCloudProject: config.googleCloudProject,
-    mcpUrl: config.clickhouseMcpUrl,
-  }),
+  mcpClient = null,
+  productionMemoryStore = null,
+  productionMemoryAgent = null,
   geminiPrepareAgent = createGeminiPrepareAgent({
     googleAgentModel: config.googleAgentModel,
     googleCloudLocation: config.googleCloudLocation,
     googleCloudProject: config.googleCloudProject,
     googleGenAiUseVertexAi: config.googleGenAiUseVertexAi,
   }),
-  server = createScriptyServer({
+  server = null,
+} = {}) {
+  if (config.clickhouseMcpUrl) {
+    mcpClient ??= createMcpClickhouseClient({
+      authToken: config.clickhouseMcpAuthToken,
+      mcpUrl: config.clickhouseMcpUrl,
+    })
+    productionMemoryStore ??= createProductionMemoryStore({
+      runQuery: mcpClient.runQuery,
+    })
+    productionMemoryAgent ??= createProductionMemoryAgent({
+      googleAgentModel: config.googleAgentModel,
+      googleCloudLocation: config.googleCloudLocation,
+      googleCloudProject: config.googleCloudProject,
+      mcpUrl: config.clickhouseMcpUrl,
+    })
+  }
+
+  server ??= createScriptyServer({
     geminiPrepareAgent,
     productionMemoryAgent,
     productionMemoryStore,
-  }),
-} = {}) {
+  })
   server.listen(config.port, () => {
     console.log(`Scripty server listening on http://localhost:${config.port}`)
   })

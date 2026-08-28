@@ -10,6 +10,26 @@ export class McpClickhouseError extends Error {
   }
 }
 
+const UNAVAILABLE_NETWORK_CODES = new Set([
+  'ECONNREFUSED',
+  'ENETUNREACH',
+  'ENOTFOUND',
+  'ETIMEDOUT',
+])
+
+export function isMcpClickhouseUnavailable(error) {
+  const seen = new Set()
+  let current = error
+
+  while (current instanceof Error && !seen.has(current)) {
+    if (UNAVAILABLE_NETWORK_CODES.has(current.code)) return true
+    seen.add(current)
+    current = current.cause
+  }
+
+  return false
+}
+
 function parseTextContent(content) {
   const text = content
     ?.filter((block) => block?.type === 'text')

@@ -82,7 +82,9 @@ test('sync-state query retains tombstones and latest versions for stale-item han
   const sql = normalizeSql(getProductionMemorySyncStateSql("'demo-script'"))
 
   assert.match(sql, /argMax\(is_deleted, memory\.version\) AS is_deleted/)
+  assert.match(sql, /argMax\(description, memory\.version\) AS description/)
+  assert.match(sql, /tupleElement\(argMax\(tuple\(note\), memory\.version\), 1\) AS note/)
   assert.match(sql, /max\(memory\.version\) AS version/)
-  assert.match(sql, /GROUP BY item_id/)
+  assert.match(sql, /GROUP BY production_id, item_id/)
   assert.doesNotMatch(sql, /is_deleted = false/)
 })

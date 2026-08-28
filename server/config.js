@@ -1,5 +1,4 @@
 const DEFAULT_PORT = 8787
-const DEFAULT_CLICKHOUSE_MCP_URL = 'http://127.0.0.1:8000/mcp'
 const DEFAULT_GOOGLE_CLOUD_LOCATION = 'us-central1'
 const DEFAULT_GOOGLE_AGENT_MODEL = 'gemini-2.5-flash'
 
@@ -21,13 +20,15 @@ function parseVertexAiEnabled(value) {
 }
 
 export function loadServerConfig(env = process.env) {
-  const clickhouseMcpUrl = env.CLICKHOUSE_MCP_URL || DEFAULT_CLICKHOUSE_MCP_URL
+  const clickhouseMcpUrl = env.CLICKHOUSE_MCP_URL || null
 
-  try {
-    const url = new URL(clickhouseMcpUrl)
-    if (!['http:', 'https:'].includes(url.protocol)) throw new Error()
-  } catch {
-    throw new Error('CLICKHOUSE_MCP_URL must be a valid URL.')
+  if (clickhouseMcpUrl) {
+    try {
+      const url = new URL(clickhouseMcpUrl)
+      if (!['http:', 'https:'].includes(url.protocol)) throw new Error()
+    } catch {
+      throw new Error('CLICKHOUSE_MCP_URL must be a valid URL.')
+    }
   }
 
   return {
