@@ -4,6 +4,7 @@ import {
   createProductionMemoryAssistantController,
   WHATS_LEFT_QUESTION,
 } from './useProductionMemoryAssistant.js'
+import { PRODUCTION_MEMORY_QUESTIONS } from '../../../productionMemoryQuestions.js'
 
 test('Production Assistant shows loading, renders the grounded answer, and asks again', async () => {
   const requests = []
@@ -20,9 +21,10 @@ test('Production Assistant shows loading, renders the grounded answer, and asks 
   assert.deepEqual(controller.getState(), {
     answer: null,
     error: null,
+    question: WHATS_LEFT_QUESTION,
     status: 'loading',
   })
-  await controller.ask('current-production')
+  await controller.ask('current-production', 'What needs another take?')
   assert.equal(requests.length, 1)
 
   resolveRequest({ answer: 'Redo: Scene 2.' })
@@ -30,6 +32,7 @@ test('Production Assistant shows loading, renders the grounded answer, and asks 
   assert.deepEqual(controller.getState(), {
     answer: 'Redo: Scene 2.',
     error: null,
+    question: WHATS_LEFT_QUESTION,
     status: 'success',
   })
 
@@ -46,6 +49,28 @@ test('Production Assistant shows loading, renders the grounded answer, and asks 
   ])
 })
 
+test('Production Assistant permits a new request after a failed request', async () => {
+  let calls = 0
+  const controller = createProductionMemoryAssistantController({
+    askProductionMemoryRequest: async () => {
+      calls += 1
+      if (calls === 1) throw new Error('Production Assistant is unavailable.')
+      return { answer: 'Redo: Scene 2.' }
+    },
+  })
+
+  await controller.ask('current-production')
+  assert.equal(controller.getState().status, 'error')
+  await controller.ask('current-production', 'What needs another take?')
+  assert.deepEqual(controller.getState(), {
+    answer: 'Redo: Scene 2.',
+    error: null,
+    question: 'What needs another take?',
+    status: 'success',
+  })
+  assert.equal(calls, 2)
+})
+
 test('Production Assistant renders no-work answers and safe failures without local fallback', async () => {
   const completeController = createProductionMemoryAssistantController({
     askProductionMemoryRequest: async () => ({ answer: 'The production work is complete.' }),
@@ -54,6 +79,7 @@ test('Production Assistant renders no-work answers and safe failures without loc
   assert.deepEqual(completeController.getState(), {
     answer: 'The production work is complete.',
     error: null,
+    question: WHATS_LEFT_QUESTION,
     status: 'success',
   })
 
@@ -66,6 +92,30 @@ test('Production Assistant renders no-work answers and safe failures without loc
   assert.deepEqual(failingController.getState(), {
     answer: null,
     error: 'Production Assistant is unavailable.',
+    question: WHATS_LEFT_QUESTION,
     status: 'error',
   })
+})
+
+test('Production Assistant sends each fixed question once and never auto-queries', async () => {
+  const requests = []
+  const controller = createProductionMemoryAssistantController({
+    askProductionMemoryRequest: async (request) => {
+      requests.push(request)
+      return { answer: 'Grounded answer.' }
+    },
+  })
+
+  assert.equal(requests.length, 0)
+  controller.reset()
+  assert.equal(requests.length, 0)
+
+  for (const { label } of PRODUCTION_MEMORY_QUESTIONS) {
+    await controller.ask('current-production', label)
+  }
+
+  assert.deepEqual(requests, PRODUCTION_MEMORY_QUESTIONS.map(({ label }) => ({
+    productionId: 'current-production',
+    question: label,
+  })))
 })

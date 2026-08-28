@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { WHATS_LEFT_QUESTION } from '../../../productionMemoryQuestions.js'
 import { askProductionMemory } from './productionMemoryApi.js'
 
-export const WHATS_LEFT_QUESTION = 'What do I still need to finish?'
+export { WHATS_LEFT_QUESTION }
 
 const INITIAL_STATE = Object.freeze({
   answer: null,
   error: null,
+  question: null,
   status: 'idle',
 })
 
@@ -28,21 +30,21 @@ export function createProductionMemoryAssistantController({
   }
 
   return {
-    ask(productionId) {
+    ask(productionId, question = WHATS_LEFT_QUESTION) {
       if (state.status === 'loading') return Promise.resolve({ skipped: true })
 
       const currentRequestId = ++requestId
-      publish({ answer: null, error: null, status: 'loading' })
+      publish({ answer: null, error: null, question, status: 'loading' })
       return Promise.resolve(askProductionMemoryRequest({
         productionId,
-        question: WHATS_LEFT_QUESTION,
+        question,
       })).then((result) => {
         if (currentRequestId !== requestId) return { skipped: true }
-        publish({ answer: result.answer, error: null, status: 'success' })
+        publish({ answer: result.answer, error: null, question, status: 'success' })
         return result
       }).catch((error) => {
         if (currentRequestId !== requestId) return { skipped: true }
-        publish({ answer: null, error: safeErrorMessage(error), status: 'error' })
+        publish({ answer: null, error: safeErrorMessage(error), question, status: 'error' })
         return { error, ok: false }
       })
     },
@@ -72,6 +74,9 @@ export function useProductionMemoryAssistant(productionId) {
 
   return {
     ...state,
-    ask: useCallback(() => controller.ask(productionId), [controller, productionId]),
+    ask: useCallback(
+      (question) => controller.ask(productionId, question),
+      [controller, productionId],
+    ),
   }
 }

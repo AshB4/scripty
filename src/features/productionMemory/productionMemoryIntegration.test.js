@@ -84,3 +84,14 @@ test('Shoot Checklist page mounts production-memory sync from live checklist sta
   assert.match(source, /ProductionAssistant/)
   assert.match(source, /productionId=\{productionMemorySnapshot\.productionId\}/)
 })
+
+test('Production Assistant exposes only fixed production-memory question actions', async () => {
+  const source = await readFile(
+    new URL('./ProductionAssistant.jsx', import.meta.url),
+    'utf8',
+  )
+
+  assert.match(source, /PRODUCTION_MEMORY_QUESTIONS\.map/)
+  assert.match(source, /assistant\.ask\(item\.label\)/)
+  assert.doesNotMatch(source, /<input/)
+})

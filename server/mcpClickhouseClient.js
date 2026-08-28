@@ -47,7 +47,7 @@ function parseTextContent(content) {
   }
 }
 
-function normalizeToolResult(result) {
+export function normalizeMcpClickhouseToolResult(result) {
   if (result?.isError) {
     throw new McpClickhouseError('mcp-clickhouse rejected the query.')
   }
@@ -138,7 +138,7 @@ export function createMcpClickhouseClient({
           name: 'run_query',
           arguments: { query },
         })
-        return normalizeToolResult(result)
+        return normalizeMcpClickhouseToolResult(result)
       } catch (error) {
         if (error instanceof McpClickhouseError) throw error
         client = null

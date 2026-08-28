@@ -88,7 +88,11 @@ FROM
   ${currentRowsSubquery({ where: `production_id = ${productionIdParameter}` })}
 )
 WHERE is_deleted = false AND is_complete = false
-ORDER BY kind, item_id
+ORDER BY
+  kind = 'asset',
+  toUInt64OrZero(splitByChar('-', source_id)[1]),
+  source_id,
+  item_id
 `.trim()
 }
 

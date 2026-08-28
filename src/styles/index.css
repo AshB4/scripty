@@ -1310,6 +1310,23 @@ svg {
   gap: 18px;
 }
 
+.production-assistant__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.production-assistant__actions .button {
+  min-height: 36px;
+  padding: 7px 10px;
+  font-size: 0.78rem;
+}
+
+.production-assistant__actions .button[aria-pressed='true'] {
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
 .production-assistant__heading .eyebrow {
   margin: 0 0 5px;
 }
@@ -1328,6 +1345,13 @@ svg {
   color: var(--text-secondary);
   line-height: 1.55;
   white-space: pre-wrap;
+}
+
+.production-assistant__response .production-assistant__question {
+  margin-bottom: 5px;
+  color: var(--text-primary);
+  font-size: 0.76rem;
+  font-weight: 700;
 }
 
 .shoot-checklist__items {
@@ -3379,6 +3403,10 @@ svg {
   }
 
   .production-assistant__heading .button {
+    width: 100%;
+  }
+
+  .production-assistant__actions .button {
     width: 100%;
   }
 

@@ -69,6 +69,7 @@ test('unfinished production query filters only after current-state collapse', ()
   assert.notEqual(unfinishedFilterIndex, -1)
   assert.equal(unfinishedFilterIndex > collapseIndex, true)
   assert.match(sql, /WHERE is_deleted = false AND is_complete = false/)
+  assert.match(sql, /ORDER BY kind = 'asset', toUInt64OrZero\(splitByChar\('-', source_id\)\[1\]\), source_id, item_id/)
 })
 
 test('queries accept an explicit production id parameter expression', () => {

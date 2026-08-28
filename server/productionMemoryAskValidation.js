@@ -26,8 +26,14 @@ export function validateProductionMemoryAskRequest(request) {
     throw new ProductionMemoryAskValidationError('Request must be an object.')
   }
 
+  const question = requiredString(request.question, 'question', MAX_QUESTION_LENGTH)
+  if (!isProductionMemoryQuestion(question)) {
+    throw new ProductionMemoryAskValidationError('question is unsupported.')
+  }
+
   return {
     productionId: requiredString(request.productionId, 'productionId', MAX_ID_LENGTH),
-    question: requiredString(request.question, 'question', MAX_QUESTION_LENGTH),
+    question,
   }
 }
+import { isProductionMemoryQuestion } from '../productionMemoryQuestions.js'

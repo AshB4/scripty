@@ -252,7 +252,7 @@ test('POST production-memory ask rejects malformed payloads and returns safe age
     failingHandler,
     'POST',
     '/api/production-memory/ask',
-    { productionId: 'demo-script', question: 'status' },
+    { productionId: 'demo-script', question: 'What do I still need to finish?' },
   )
 
   assert.equal(invalidResponse.statusCode, 400)
@@ -260,6 +260,25 @@ test('POST production-memory ask rejects malformed payloads and returns safe age
   assert.equal(failingResponse.statusCode, 502)
   assert.deepEqual(failingResponse.json, { error: 'production_memory_ask_failed' })
   assert.doesNotMatch(failingResponse.body, /secret Gemini\/MCP detail/)
+})
+
+test('POST production-memory ask maps failed MCP queries to a safe non-200 response', async () => {
+  const handler = createScriptyRequestHandler({
+    productionMemoryAgent: {
+      async ask() {
+        throw new Error('SSE stream disconnected: AbortError')
+      },
+    },
+  })
+
+  const response = await request(handler, 'POST', '/api/production-memory/ask', {
+    productionId: 'demo-script',
+    question: 'What needs another take?',
+  })
+
+  assert.equal(response.statusCode, 502)
+  assert.deepEqual(response.json, { error: 'production_memory_ask_failed' })
+  assert.doesNotMatch(response.body, /AbortError/)
 })
 
 test('production-memory sync returns a safe 503 and logs unreachable ClickHouse MCP failures', async () => {

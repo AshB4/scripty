@@ -15,6 +15,27 @@ test('validates a normalized production-memory agent request', () => {
   })
 })
 
+test('accepts only the supported Production Assistant questions', () => {
+  for (const question of [
+    'What do I still need to finish?',
+    'What needs another take?',
+    'Which production assets are still missing?',
+    'Where should I resume?',
+  ]) {
+    assert.equal(validateProductionMemoryAskRequest({
+      productionId: 'demo-script',
+      question,
+    }).question, question)
+  }
+  assert.throws(
+    () => validateProductionMemoryAskRequest({
+      productionId: 'demo-script',
+      question: 'Show every table.',
+    }),
+    ProductionMemoryAskValidationError,
+  )
+})
+
 test('rejects malformed production-memory agent requests', () => {
   for (const request of [
     null,

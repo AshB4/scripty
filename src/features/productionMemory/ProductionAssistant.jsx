@@ -1,5 +1,9 @@
 import { Sparkles } from 'lucide-react'
 import Button from '../../components/Button.jsx'
+import {
+  PRODUCTION_MEMORY_QUESTIONS,
+  WHATS_LEFT_QUESTION,
+} from '../../../productionMemoryQuestions.js'
 import { useProductionMemoryAssistant } from './useProductionMemoryAssistant.js'
 
 export default function ProductionAssistant({ productionId }) {
@@ -11,20 +15,30 @@ export default function ProductionAssistant({ productionId }) {
       <div className="production-assistant__heading">
         <div>
           <p className="eyebrow">Production Assistant</p>
-          <h2 id="production-assistant-title">What's Left?</h2>
+          <h2 id="production-assistant-title">Production Assistant</h2>
         </div>
-        <Button
-          disabled={isLoading}
-          icon={Sparkles}
-          onClick={assistant.ask}
-          variant="secondary"
-        >
-          {isLoading ? 'Checking current work...' : 'What do I still need to finish?'}
-        </Button>
+      </div>
+
+      <div aria-label="Production Assistant questions" className="production-assistant__actions">
+        {PRODUCTION_MEMORY_QUESTIONS.map((item) => (
+          <Button
+            aria-pressed={assistant.question === item.label}
+            disabled={isLoading}
+            icon={item.label === WHATS_LEFT_QUESTION ? Sparkles : undefined}
+            key={item.id}
+            onClick={() => assistant.ask(item.label)}
+            variant="secondary"
+          >
+            {item.label}
+          </Button>
+        ))}
       </div>
 
       <div aria-live="polite" className="production-assistant__response">
         {isLoading ? <p>Checking current Production Memory...</p> : null}
+        {assistant.question && !isLoading ? (
+          <p className="production-assistant__question">{assistant.question}</p>
+        ) : null}
         {assistant.status === 'success' ? <p>{assistant.answer}</p> : null}
         {assistant.status === 'error' ? <p role="alert">{assistant.error}</p> : null}
       </div>
