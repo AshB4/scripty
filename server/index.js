@@ -175,6 +175,7 @@ export function createScriptyRequestHandler({
         sendJson(response, 200, {
           productionId: askRequest.productionId,
           answer: result.answer,
+          completion: result.completion,
           toolUse: result.toolUse,
         })
       } catch (error) {

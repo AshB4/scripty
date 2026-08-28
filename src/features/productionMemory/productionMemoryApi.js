@@ -14,6 +14,25 @@ async function readJsonResponse(response) {
   }
 }
 
+function completionSummary(value) {
+  if (value == null) return null
+  if (!value || typeof value !== 'object' || value.isComplete !== true) {
+    throw new ProductionMemoryApiError('Production Assistant returned an invalid response.')
+  }
+
+  const fields = ['recordingCount', 'assetCount', 'totalTakes']
+  if (fields.some((field) => !Number.isSafeInteger(value[field]) || value[field] < 0)) {
+    throw new ProductionMemoryApiError('Production Assistant returned an invalid response.')
+  }
+
+  return {
+    assetCount: value.assetCount,
+    isComplete: true,
+    recordingCount: value.recordingCount,
+    totalTakes: value.totalTakes,
+  }
+}
+
 export async function syncProductionMemorySnapshot(
   snapshot,
   { fetchImpl = globalThis.fetch } = {},
@@ -76,6 +95,7 @@ export async function askProductionMemory(
 
   return {
     answer: body.answer.trim(),
+    completion: completionSummary(body.completion),
     productionId: body.productionId,
   }
 }

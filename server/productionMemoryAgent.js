@@ -9,8 +9,11 @@ import {
   stringifyContent,
 } from '@google/adk'
 import { clickHouseStringLiteral } from './productionMemoryStore.js'
-import { getUnfinishedProductionMemoryItemsSql } from './productionMemorySchema.js'
-import { isProductionMemoryQuestion } from '../productionMemoryQuestions.js'
+import { getCurrentProductionMemoryItemsSql } from './productionMemorySchema.js'
+import {
+  isProductionMemoryQuestion,
+  WHATS_LEFT_QUESTION,
+} from '../productionMemoryQuestions.js'
 import { normalizeMcpClickhouseToolResult } from './mcpClickhouseClient.js'
 
 const APP_NAME = 'scripty-production-memory'
@@ -42,20 +45,20 @@ function requiredConfigString(value, field) {
   return value.trim()
 }
 
-export function getOutstandingProductionMemorySql(productionId) {
-  return getUnfinishedProductionMemoryItemsSql(clickHouseStringLiteral(productionId))
+export function getProductionMemoryAssistantSql(productionId) {
+  return getCurrentProductionMemoryItemsSql(clickHouseStringLiteral(productionId))
 }
 
 function agentInstruction(requiredSql, question) {
-  return `You are Scripty's production-status assistant. Your only job is to answer the creator's question about current unfinished production work for one production.
+  return `You are Scripty's production-status assistant. Your only job is to answer the creator's question about current production work for one production.
 
-You must call the ${TOOL_NAME} MCP tool exactly once, using the exact SQL below before answering. The SQL already applies deterministic current-state and completion filtering. Do not change it, write other SQL, or answer from memory.
+You must call the ${TOOL_NAME} MCP tool exactly once, using the exact SQL below before answering. The SQL already applies deterministic current-state and tombstone filtering. Do not change it, write other SQL, or answer from memory.
 
 \`\`\`sql
 ${requiredSql}
 \`\`\`
 
-Use only the tool result. Report only unfinished current items. Never invent items or include completed work.
+Use only the tool result. Report only current unfinished items. Never invent items or include completed work. If every returned item has is_complete true, say the production work is complete without inventing counts.
 
 The creator asked: "${question}"
 
@@ -101,6 +104,7 @@ function validProductionMemoryResult(result) {
     'status',
     'is_complete',
     'description',
+    'take_count',
   ]
   return requiredColumns.every((column) => result.columns.includes(column)) &&
     result.rows.every((row) => Array.isArray(row) && row.length === result.columns.length)
@@ -135,6 +139,41 @@ function requireSuccessfulMcpQuery(events, adk) {
   }
 
   return result
+}
+
+function clickHouseBoolean(value) {
+  return value === true || value === 1 || value === '1' || value === 'true'
+}
+
+function nonNegativeInteger(value) {
+  const number = Number(value)
+  return Number.isSafeInteger(number) && number >= 0 ? number : 0
+}
+
+export function getProductionCompletionSummary(result) {
+  const columnIndex = new Map(
+    result.columns.map((column, index) => [column, index]),
+  )
+  const valueFor = (row, column) => row[columnIndex.get(column)]
+  const activeRows = result.rows.filter(
+    (row) => !clickHouseBoolean(valueFor(row, 'is_deleted')),
+  )
+  const recordingRows = activeRows.filter(
+    (row) => String(valueFor(row, 'kind')) === 'recording',
+  )
+  const assetRows = activeRows.filter(
+    (row) => String(valueFor(row, 'kind')) === 'asset',
+  )
+
+  return {
+    assetCount: assetRows.filter((row) => clickHouseBoolean(valueFor(row, 'is_complete'))).length,
+    isComplete: activeRows.every((row) => clickHouseBoolean(valueFor(row, 'is_complete'))),
+    recordingCount: recordingRows.filter((row) => clickHouseBoolean(valueFor(row, 'is_complete'))).length,
+    totalTakes: recordingRows.reduce(
+      (total, row) => total + nonNegativeInteger(valueFor(row, 'take_count')),
+      0,
+    ),
+  }
 }
 
 export function createProductionMemoryAgent({
@@ -191,7 +230,7 @@ export function createProductionMemoryAgent({
         googleCloudProject: requiredConfigString(googleCloudProject, 'googleCloudProject'),
         mcpUrl: requiredConfigString(mcpUrl, 'mcpUrl'),
       }
-      const requiredSql = getOutstandingProductionMemorySql(productionId)
+      const requiredSql = getProductionMemoryAssistantSql(productionId)
       const tools = await getMcpTools(config)
       const agent = new adk.LlmAgent({
         name: 'production_memory_assistant',
@@ -226,10 +265,14 @@ export function createProductionMemoryAgent({
           events.push(event)
         }
 
-        requireSuccessfulMcpQuery(events, adk)
+        const result = requireSuccessfulMcpQuery(events, adk)
+        const completion = getProductionCompletionSummary(result)
 
         return {
           answer: finalAnswerFromEvents(events, adk),
+          completion: question === WHATS_LEFT_QUESTION && completion.isComplete
+            ? completion
+            : null,
           toolUse: {
             usedMcp: true,
             toolName: TOOL_NAME,

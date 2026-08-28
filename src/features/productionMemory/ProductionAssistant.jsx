@@ -6,6 +6,10 @@ import {
 } from '../../../productionMemoryQuestions.js'
 import { useProductionMemoryAssistant } from './useProductionMemoryAssistant.js'
 
+function countLabel(count, singular, plural = `${singular}s`) {
+  return `${count} ${count === 1 ? singular : plural}`
+}
+
 export default function ProductionAssistant({ productionId }) {
   const assistant = useProductionMemoryAssistant(productionId)
   const isLoading = assistant.status === 'loading'
@@ -40,6 +44,15 @@ export default function ProductionAssistant({ productionId }) {
           <p className="production-assistant__question">{assistant.question}</p>
         ) : null}
         {assistant.status === 'success' ? <p>{assistant.answer}</p> : null}
+        {assistant.completion ? (
+          <section className="production-assistant__completion" aria-label="Production completion summary">
+            <strong>Production complete</strong>
+            <span>{countLabel(assistant.completion.recordingCount, 'recording section')} completed</span>
+            <span>{countLabel(assistant.completion.totalTakes, 'total take')} logged</span>
+            <span>{countLabel(assistant.completion.assetCount, 'production asset')} completed</span>
+            <span>No pickups remaining</span>
+          </section>
+        ) : null}
         {assistant.status === 'error' ? <p role="alert">{assistant.error}</p> : null}
       </div>
     </section>

@@ -82,6 +82,18 @@ test('review content retains editing, clarification, and finalize controls', asy
   assert.match(source, /data-blocks-finalize/)
 })
 
+test('review makes tentative classifications fast to confirm or change', async () => {
+  const source = await readFile(
+    new URL('./PrepareReviewContent.jsx', import.meta.url),
+    'utf8',
+  )
+
+  assert.match(source, /item\.status === 'tentative'/)
+  assert.match(source, />\s*Confirm\s*<\/Button>/)
+  assert.match(source, /status: 'confirmed'/)
+  assert.match(source, />\s*Change type\s*<\/span>/)
+})
+
 test('router exposes the dedicated Preparation review route', async () => {
   const source = await readFile(
     new URL('../../../app/router.jsx', import.meta.url),

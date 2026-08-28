@@ -6,6 +6,7 @@ export { WHATS_LEFT_QUESTION }
 
 const INITIAL_STATE = Object.freeze({
   answer: null,
+  completion: null,
   error: null,
   question: null,
   status: 'idle',
@@ -34,17 +35,23 @@ export function createProductionMemoryAssistantController({
       if (state.status === 'loading') return Promise.resolve({ skipped: true })
 
       const currentRequestId = ++requestId
-      publish({ answer: null, error: null, question, status: 'loading' })
+      publish({ answer: null, completion: null, error: null, question, status: 'loading' })
       return Promise.resolve(askProductionMemoryRequest({
         productionId,
         question,
       })).then((result) => {
         if (currentRequestId !== requestId) return { skipped: true }
-        publish({ answer: result.answer, error: null, question, status: 'success' })
+        publish({
+          answer: result.answer,
+          completion: result.completion ?? null,
+          error: null,
+          question,
+          status: 'success',
+        })
         return result
       }).catch((error) => {
         if (currentRequestId !== requestId) return { skipped: true }
-        publish({ answer: null, error: safeErrorMessage(error), question, status: 'error' })
+        publish({ answer: null, completion: null, error: safeErrorMessage(error), question, status: 'error' })
         return { error, ok: false }
       })
     },

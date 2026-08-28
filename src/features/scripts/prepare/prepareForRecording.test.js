@@ -447,6 +447,43 @@ test('creator can switch a requirement between confirmed and tentative', () => {
   assert.equal(tentative.segments[1].status, 'tentative')
 })
 
+test('creator can confirm a tentative classification without re-running Prepare', () => {
+  let providerCalls = 0
+  const source = 'ASH: Keep this source unchanged.'
+  const initial = updatePrepareRequirement(validResult(), 'req-1', {
+    status: 'tentative',
+  })
+  const workflow = createPrepareWorkflow({
+    provider: {
+      async prepare() {
+        providerCalls += 1
+        return initial
+      },
+    },
+    storage: {
+      load: () => ({ finalizedAt: null, finalizedResult: null, result: initial }),
+      save: (_script, _parserMode, result) => result,
+      saveFinalized: (_script, _parserMode, result) => ({
+        finalizedAt: '2026-08-27T00:00:00.000Z',
+        finalizedResult: result,
+      }),
+    },
+  })
+
+  workflow.setContext(source, 'Auto')
+  const confirmed = workflow.updateRequirement('req-1', {
+    ignored: false,
+    status: 'confirmed',
+    type: initial.requirements[0].type,
+  })
+
+  assert.equal(providerCalls, 0)
+  assert.equal(confirmed.requirements[0].status, 'confirmed')
+  assert.equal(confirmed.segments[1].status, 'confirmed')
+  assert.equal(confirmed.segments[1].originalText, validResult().segments[1].originalText)
+  assert.equal(source, 'ASH: Keep this source unchanged.')
+})
+
 test('resolving a clarification moves it into corrected metadata', () => {
   const result = resolvePrepareClarification(validResult(), 'clar-1', {
     type: 'CAMERA_CUT',

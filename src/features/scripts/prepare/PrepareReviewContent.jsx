@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Pencil } from 'lucide-react'
+import { Check, Pencil } from 'lucide-react'
 import Button from '../../../components/Button.jsx'
 import PrepareItemEditor from './PrepareItemEditor.jsx'
 import { PREPARE_TYPE_LABELS } from './prepareLabels.js'
@@ -14,9 +14,10 @@ function itemText(item) {
 
 function EditableItem({ editKey, editingKey, isBlocking, item, kind, onEdit, onSave }) {
   const isEditing = editingKey === editKey
+  const isTentative = item.status === 'tentative' && !item.ignored
   return (
     <article
-      className={`prepare-card__item ${item.ignored ? 'prepare-card__item--ignored' : ''} ${isBlocking ? 'prepare-card__item--blocking' : ''}`}
+      className={`prepare-card__item ${item.ignored ? 'prepare-card__item--ignored' : ''} ${isTentative ? 'prepare-card__item--tentative' : ''} ${isBlocking ? 'prepare-card__item--blocking' : ''}`}
       data-blocks-finalize={isBlocking ? 'true' : undefined}
     >
       <div className="prepare-card__item-header">
@@ -28,7 +29,7 @@ function EditableItem({ editKey, editingKey, isBlocking, item, kind, onEdit, onS
             <span
               className={`prepare-card__status prepare-card__status--${item.status}`}
             >
-              {item.status}
+              {item.status === 'tentative' ? 'Tentative' : 'Confirmed'}
             </span>
           ) : null}
           {item.ignored ? (
@@ -42,15 +43,31 @@ function EditableItem({ editKey, editingKey, isBlocking, item, kind, onEdit, onS
             </span>
           ) : null}
         </div>
-        <button
-          aria-expanded={isEditing}
-          className="prepare-card__edit"
-          onClick={() => onEdit(isEditing ? null : editKey)}
-          type="button"
-        >
-          <Pencil aria-hidden="true" size={14} />
-          <span>Edit</span>
-        </button>
+        <div className="prepare-card__item-actions">
+          {isTentative ? (
+            <Button
+              className="prepare-card__item-confirm"
+              icon={Check}
+              onClick={() => onSave({
+                ignored: false,
+                status: 'confirmed',
+                type: item.type,
+              })}
+              variant="secondary"
+            >
+              Confirm
+            </Button>
+          ) : null}
+          <button
+            aria-expanded={isEditing}
+            className="prepare-card__edit"
+            onClick={() => onEdit(isEditing ? null : editKey)}
+            type="button"
+          >
+            <Pencil aria-hidden="true" size={14} />
+            <span>Change type</span>
+          </button>
+        </div>
       </div>
       <p>{itemText(item)}</p>
       {item.reason ? <small>{item.reason}</small> : null}
