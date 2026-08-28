@@ -20,6 +20,7 @@ test('Production Assistant shows loading, renders the grounded answer, and asks 
   const firstRequest = controller.ask('current-production')
   assert.deepEqual(controller.getState(), {
     answer: null,
+    completion: null,
     error: null,
     question: WHATS_LEFT_QUESTION,
     status: 'loading',
@@ -31,6 +32,7 @@ test('Production Assistant shows loading, renders the grounded answer, and asks 
   await firstRequest
   assert.deepEqual(controller.getState(), {
     answer: 'Redo: Scene 2.',
+    completion: null,
     error: null,
     question: WHATS_LEFT_QUESTION,
     status: 'success',
@@ -64,6 +66,7 @@ test('Production Assistant permits a new request after a failed request', async 
   await controller.ask('current-production', 'What needs another take?')
   assert.deepEqual(controller.getState(), {
     answer: 'Redo: Scene 2.',
+    completion: null,
     error: null,
     question: 'What needs another take?',
     status: 'success',
@@ -78,6 +81,7 @@ test('Production Assistant renders no-work answers and safe failures without loc
   await completeController.ask('current-production')
   assert.deepEqual(completeController.getState(), {
     answer: 'The production work is complete.',
+    completion: null,
     error: null,
     question: WHATS_LEFT_QUESTION,
     status: 'success',
@@ -91,6 +95,7 @@ test('Production Assistant renders no-work answers and safe failures without loc
   await failingController.ask('current-production')
   assert.deepEqual(failingController.getState(), {
     answer: null,
+    completion: null,
     error: 'Production Assistant is unavailable.',
     question: WHATS_LEFT_QUESTION,
     status: 'error',

@@ -1379,6 +1379,14 @@ svg {
   line-height: 1.45;
 }
 
+.app-footer {
+  padding: 14px 20px 20px;
+  color: var(--text-secondary);
+  font-size: 0.68rem;
+  line-height: 1.4;
+  text-align: center;
+}
+
 .shoot-checklist__items {
   display: grid;
   gap: 16px;

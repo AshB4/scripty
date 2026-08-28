@@ -22,3 +22,13 @@ test('workspace uses the shared app header', async () => {
   assert.match(source, /import AppHeader/)
   assert.match(source, /<AppHeader>/)
 })
+
+test('the global application shell renders one copyright footer', async () => {
+  const [app, footer] = await Promise.all([
+    readFile(new URL('../../app/App.jsx', import.meta.url), 'utf8'),
+    readFile(new URL('../../components/AppFooter.jsx', import.meta.url), 'utf8'),
+  ])
+
+  assert.equal(app.match(/<AppFooter\s*\/?\s*>/g)?.length, 1)
+  assert.match(footer, /© 2026 Ashley Broussard/)
+})

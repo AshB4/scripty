@@ -112,6 +112,7 @@ test('askProductionMemory posts the current production id and fixed question', a
 
   assert.deepEqual(result, {
     answer: 'Redo: Scene 2.',
+    completion: null,
     productionId: 'current-production',
   })
   assert.equal(calls[0].url, '/api/production-memory/ask')

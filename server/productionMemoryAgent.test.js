@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
   createProductionMemoryAgent,
-  getOutstandingProductionMemorySql,
+  getProductionMemoryAssistantSql,
   ProductionMemoryAgentError,
 } from './productionMemoryAgent.js'
 import { PRODUCTION_MEMORY_QUESTIONS } from '../productionMemoryQuestions.js'
@@ -74,7 +74,7 @@ function successfulQueryEvents(finalText = 'Grounded answer.') {
         name: 'run_query',
         response: {
           content: [{
-            text: '{"columns":["item_id","source_id","kind","status","is_complete","description"],"rows":[["recording:2-dialogue","2-dialogue","recording","redo",false,"Redo section"]]}',
+            text: '{"columns":["item_id","source_id","kind","status","is_complete","description","take_count"],"rows":[["recording:2-dialogue","2-dialogue","recording","redo",false,"Redo section",0]]}',
             type: 'text',
           }],
         },
@@ -108,6 +108,7 @@ test('caches the ADK MCP run_query tool and returns its final answer', async () 
 
   assert.deepEqual(result, {
     answer: 'Redo: redo section. Not Recorded: missing section.',
+    completion: null,
     toolUse: { usedMcp: true, toolName: 'run_query' },
   })
   assert.deepEqual(fake.captured.connection, {
@@ -121,7 +122,8 @@ test('caches the ADK MCP run_query tool and returns its final answer', async () 
     project: 'test-project',
     location: 'us-central1',
   })
-  assert.match(fake.captured.agent.instruction, /is_complete = false/)
+  assert.match(fake.captured.agent.instruction, /WHERE is_deleted = false/)
+  assert.doesNotMatch(fake.captured.agent.instruction, /AND is_complete = false/)
   assert.match(fake.captured.agent.instruction, /demo-script/)
   assert.equal(fake.captured.run.newMessage.parts[0].text, 'What do I still need to finish?')
   assert.equal(fake.captured.toolDiscoveryCalls, 1)
@@ -176,11 +178,11 @@ test('normalizes ADK and MCP failures without leaking their cause', async () => 
   )
 })
 
-test('guards MCP calls so Gemini cannot replace the deterministic outstanding query', async () => {
+test('guards MCP calls so Gemini cannot replace the deterministic current-state query', async () => {
   const fake = createFakeAdk(successfulQueryEvents('Unused'))
   const agent = createAgent(fake.adk)
   const productionId = 'demo-script'
-  const requiredSql = getOutstandingProductionMemorySql(productionId)
+  const requiredSql = getProductionMemoryAssistantSql(productionId)
 
   await agent.ask({ productionId, question: 'What do I still need to finish?' })
 
