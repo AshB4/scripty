@@ -6,6 +6,7 @@ import Button from '../../../components/Button.jsx'
 import IconButton from '../../../components/IconButton.jsx'
 import { useLocalStorage } from '../../../hooks/useLocalStorage.js'
 import { buildProductionMemorySnapshot } from '../../productionMemory/productionMemorySnapshot.js'
+import ProductionAssistant from '../../productionMemory/ProductionAssistant.jsx'
 import { useProductionMemorySync } from '../../productionMemory/useProductionMemorySync.js'
 import { createTrackableBlocks } from '../../teleprompter/voiceFollow/voiceFollowMatcher.js'
 import { resolveTeleprompterSegmentModel } from '../../teleprompter/preparedSegments.js'
@@ -149,6 +150,8 @@ export default function ShootChecklistPage() {
               </div>
               <strong>{checklist.progress.percent}%</strong>
             </section>
+
+            <ProductionAssistant productionId={productionMemorySnapshot.productionId} />
 
             <section aria-labelledby="shoot-checklist-items" className="shoot-checklist__items">
               <div className="shoot-checklist__section-heading">

@@ -58,12 +58,13 @@ function createFakeAdk(eventsOrError) {
   }
 }
 
-function createAgent(adk) {
+function createAgent(adk, { mcpAuthToken = null } = {}) {
   return createProductionMemoryAgent({
     adk,
     googleAgentModel: 'gemini-2.5-flash',
     googleCloudLocation: 'us-central1',
     googleCloudProject: 'test-project',
+    mcpAuthToken,
     mcpUrl: 'http://127.0.0.1:8000/mcp',
   })
 }
@@ -99,6 +100,28 @@ test('uses an ADK MCPToolset restricted to run_query and returns its final answe
   assert.match(fake.captured.agent.instruction, /demo-script/)
   assert.equal(fake.captured.run.newMessage.parts[0].text, 'What do I still need to finish?')
   assert.equal(fake.captured.closed, true)
+})
+
+test('passes the server-side MCP bearer token to ADK only when configured', async () => {
+  const fake = createFakeAdk([
+    { calls: [{ name: 'run_query' }] },
+    { final: true, text: 'Nothing remains.' },
+  ])
+
+  await createAgent(fake.adk, { mcpAuthToken: 'server-only-token' }).ask({
+    productionId: 'demo-script',
+    question: 'What do I still need to finish?',
+  })
+
+  assert.deepEqual(fake.captured.connection, {
+    type: 'StreamableHTTPConnectionParams',
+    url: 'http://127.0.0.1:8000/mcp',
+    transportOptions: {
+      requestInit: {
+        headers: { Authorization: 'Bearer server-only-token' },
+      },
+    },
+  })
 })
 
 test('requires the Gemini agent to invoke mcp-clickhouse before returning an answer', async () => {

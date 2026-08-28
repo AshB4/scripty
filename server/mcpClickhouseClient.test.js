@@ -45,6 +45,21 @@ test('MCP client calls the official run_query tool and normalizes text results',
   ])
 })
 
+test('MCP client passes configured bearer auth only to the server transport', async () => {
+  const client = createMcpClickhouseClient({
+    authToken: 'server-only-token',
+    mcpUrl: 'http://127.0.0.1:8000/mcp',
+    clientFactory: () => clientWithResult({ content: [], structuredContent: { result: '{"columns":[],"rows":[]}' } }, []),
+    transportFactory: (url, authToken) => {
+      assert.equal(url, 'http://127.0.0.1:8000/mcp')
+      assert.equal(authToken, 'server-only-token')
+      return {}
+    },
+  })
+
+  await client.runQuery('SELECT 1')
+})
+
 test('MCP client supports FastMCP structured string results', async () => {
   const client = createMcpClickhouseClient({
     mcpUrl: 'http://127.0.0.1:8000/mcp',

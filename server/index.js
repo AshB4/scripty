@@ -253,6 +253,7 @@ export function startServer({
       googleAgentModel: config.googleAgentModel,
       googleCloudLocation: config.googleCloudLocation,
       googleCloudProject: config.googleCloudProject,
+      mcpAuthToken: config.clickhouseMcpAuthToken,
       mcpUrl: config.clickhouseMcpUrl,
     })
   }

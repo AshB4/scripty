@@ -1294,6 +1294,42 @@ svg {
   transition: width 180ms ease;
 }
 
+.production-assistant {
+  display: grid;
+  gap: 14px;
+  padding: 20px 24px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+}
+
+.production-assistant__heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.production-assistant__heading .eyebrow {
+  margin: 0 0 5px;
+}
+
+.production-assistant__heading h2 {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.production-assistant__response {
+  min-height: 0;
+}
+
+.production-assistant__response p {
+  margin: 0;
+  color: var(--text-secondary);
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
 .shoot-checklist__items {
   display: grid;
   gap: 16px;
@@ -3331,6 +3367,19 @@ svg {
   .shoot-checklist__progress-track {
     grid-column: 1 / -1;
     grid-row: 2;
+  }
+
+  .production-assistant {
+    padding: 16px;
+  }
+
+  .production-assistant__heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .production-assistant__heading .button {
+    width: 100%;
   }
 
   .shoot-checklist__items {

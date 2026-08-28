@@ -43,3 +43,39 @@ export async function syncProductionMemorySnapshot(
 
   return body
 }
+
+export async function askProductionMemory(
+  { productionId, question },
+  { fetchImpl = globalThis.fetch } = {},
+) {
+  if (typeof fetchImpl !== 'function') {
+    throw new ProductionMemoryApiError('Production Assistant is unavailable.')
+  }
+
+  let response
+  try {
+    response = await fetchImpl('/api/production-memory/ask', {
+      body: JSON.stringify({ productionId, question }),
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+    })
+  } catch {
+    throw new ProductionMemoryApiError('Production Assistant is unavailable.')
+  }
+
+  const body = await readJsonResponse(response)
+  if (!response.ok) {
+    throw new ProductionMemoryApiError(
+      body?.message ?? 'Production Assistant could not check current production work.',
+      { status: response.status },
+    )
+  }
+  if (typeof body?.answer !== 'string' || !body.answer.trim()) {
+    throw new ProductionMemoryApiError('Production Assistant returned an invalid response.')
+  }
+
+  return {
+    answer: body.answer.trim(),
+    productionId: body.productionId,
+  }
+}

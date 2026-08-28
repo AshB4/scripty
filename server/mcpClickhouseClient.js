@@ -85,7 +85,11 @@ function defaultClientFactory() {
 
 function defaultTransportFactory(url, authToken) {
   const options = authToken
-    ? { authProvider: { token: async () => authToken } }
+    ? {
+      requestInit: {
+        headers: { Authorization: `Bearer ${authToken}` },
+      },
+    }
     : undefined
   return new StreamableHTTPClientTransport(new URL(url), options)
 }

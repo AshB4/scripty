@@ -81,4 +81,6 @@ test('Shoot Checklist page mounts production-memory sync from live checklist sta
   assert.match(source, /buildRecordingProgressSections/)
   assert.match(source, /loadRecordingProgress\(script, parserMode\)\.sections/)
   assert.match(source, /useProductionMemorySync\(productionMemorySnapshot\)/)
+  assert.match(source, /ProductionAssistant/)
+  assert.match(source, /productionId=\{productionMemorySnapshot\.productionId\}/)
 })

@@ -1,0 +1,77 @@
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { askProductionMemory } from './productionMemoryApi.js'
+
+export const WHATS_LEFT_QUESTION = 'What do I still need to finish?'
+
+const INITIAL_STATE = Object.freeze({
+  answer: null,
+  error: null,
+  status: 'idle',
+})
+
+function safeErrorMessage(error) {
+  return error instanceof Error && error.message
+    ? error.message
+    : 'Production Assistant could not check current production work.'
+}
+
+export function createProductionMemoryAssistantController({
+  askProductionMemoryRequest = askProductionMemory,
+} = {}) {
+  let requestId = 0
+  let state = INITIAL_STATE
+  const listeners = new Set()
+
+  const publish = (nextState) => {
+    state = nextState
+    listeners.forEach((listener) => listener(state))
+  }
+
+  return {
+    ask(productionId) {
+      if (state.status === 'loading') return Promise.resolve({ skipped: true })
+
+      const currentRequestId = ++requestId
+      publish({ answer: null, error: null, status: 'loading' })
+      return Promise.resolve(askProductionMemoryRequest({
+        productionId,
+        question: WHATS_LEFT_QUESTION,
+      })).then((result) => {
+        if (currentRequestId !== requestId) return { skipped: true }
+        publish({ answer: result.answer, error: null, status: 'success' })
+        return result
+      }).catch((error) => {
+        if (currentRequestId !== requestId) return { skipped: true }
+        publish({ answer: null, error: safeErrorMessage(error), status: 'error' })
+        return { error, ok: false }
+      })
+    },
+
+    getState() {
+      return state
+    },
+
+    reset() {
+      requestId += 1
+      publish(INITIAL_STATE)
+    },
+
+    subscribe(listener) {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    },
+  }
+}
+
+export function useProductionMemoryAssistant(productionId) {
+  const controller = useMemo(() => createProductionMemoryAssistantController(), [])
+  const [state, setState] = useState(controller.getState())
+
+  useEffect(() => controller.subscribe(setState), [controller])
+  useEffect(() => controller.reset(), [controller, productionId])
+
+  return {
+    ...state,
+    ask: useCallback(() => controller.ask(productionId), [controller, productionId]),
+  }
+}

@@ -78,6 +78,7 @@ function toolCallsFromEvents(events, adk) {
 
 export function createProductionMemoryAgent({
   adk = defaultAdk,
+  mcpAuthToken = null,
   googleAgentModel,
   googleCloudLocation,
   googleCloudProject,
@@ -95,6 +96,15 @@ export function createProductionMemoryAgent({
       const toolset = new adk.MCPToolset({
         type: 'StreamableHTTPConnectionParams',
         url: config.mcpUrl,
+        ...(mcpAuthToken
+          ? {
+            transportOptions: {
+              requestInit: {
+                headers: { Authorization: `Bearer ${mcpAuthToken}` },
+              },
+            },
+          }
+          : {}),
       }, [TOOL_NAME])
       const agent = new adk.LlmAgent({
         name: 'production_memory_assistant',
