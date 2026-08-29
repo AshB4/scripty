@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { Readable } from 'node:stream'
 import { test } from 'node:test'
 import { loadServerConfig } from './config.js'
@@ -37,8 +40,27 @@ async function request(handler, method, url, payload) {
   return {
     body,
     headers,
-    json: JSON.parse(body),
+    json: (() => {
+      try {
+        return JSON.parse(body)
+      } catch {
+        return null
+      }
+    })(),
     statusCode,
+  }
+}
+
+async function withDist(files, callback) {
+  const distDirectory = await mkdtemp(join(tmpdir(), 'scripty-dist-'))
+  try {
+    await Promise.all(Object.entries(files).map(async ([path, content]) => {
+      const filePath = join(distDirectory, path)
+      await writeFile(filePath, content)
+    }))
+    return await callback(distDirectory)
+  } finally {
+    await rm(distDirectory, { force: true, recursive: true })
   }
 }
 
@@ -66,6 +88,60 @@ test('GET /api/health returns the expected JSON response', async () => {
 
 test('unknown API routes return JSON 404s', async () => {
   const response = await request(handleScriptyRequest, 'GET', '/api/missing')
+
+  assert.equal(response.statusCode, 404)
+  assert.deepEqual(response.json, { error: 'not_found' })
+})
+
+test('non-API GET routes serve the built SPA entry point while API routes retain priority', async () => {
+  await withDist({ 'index.html': '<!doctype html><title>Scripty</title>' }, async (distDirectory) => {
+    const handler = createScriptyRequestHandler({ distDirectory })
+
+    const appResponse = await request(handler, 'GET', '/review-preparation')
+    const apiResponse = await request(handler, 'GET', '/api/missing')
+
+    assert.equal(appResponse.statusCode, 200)
+    assert.equal(appResponse.headers['Content-Type'], 'text/html; charset=utf-8')
+    assert.equal(appResponse.body, '<!doctype html><title>Scripty</title>')
+    assert.equal(apiResponse.statusCode, 404)
+    assert.deepEqual(apiResponse.json, { error: 'not_found' })
+  })
+})
+
+test('built static assets are served from dist', async () => {
+  await withDist({ 'app.js': 'console.log("Scripty")' }, async (distDirectory) => {
+    const response = await request(
+      createScriptyRequestHandler({ distDirectory }),
+      'GET',
+      '/app.js',
+    )
+
+    assert.equal(response.statusCode, 200)
+    assert.equal(response.headers['Content-Type'], 'text/javascript; charset=utf-8')
+    assert.equal(response.body, 'console.log("Scripty")')
+  })
+})
+
+test('non-GET frontend requests and unsafe paths do not serve the SPA', async () => {
+  await withDist({ 'index.html': '<!doctype html>' }, async (distDirectory) => {
+    const handler = createScriptyRequestHandler({ distDirectory })
+
+    const postResponse = await request(handler, 'POST', '/review-preparation')
+    const traversalResponse = await request(handler, 'GET', '/%2e%2e/server/index.js')
+
+    assert.equal(postResponse.statusCode, 404)
+    assert.deepEqual(postResponse.json, { error: 'not_found' })
+    assert.equal(traversalResponse.statusCode, 404)
+    assert.deepEqual(traversalResponse.json, { error: 'not_found' })
+  })
+})
+
+test('missing dist returns a normal 404 without crashing the server', async () => {
+  const response = await request(
+    createScriptyRequestHandler({ distDirectory: join(tmpdir(), 'scripty-missing-dist') }),
+    'GET',
+    '/review-preparation',
+  )
 
   assert.equal(response.statusCode, 404)
   assert.deepEqual(response.json, { error: 'not_found' })

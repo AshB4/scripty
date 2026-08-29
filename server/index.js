@@ -1,4 +1,7 @@
 import { createServer } from 'node:http'
+import { readFile, stat } from 'node:fs/promises'
+import { dirname, extname, resolve, sep } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { loadServerConfig } from './config.js'
 import {
   createMcpClickhouseClient,
@@ -21,12 +24,68 @@ import {
 } from './productionMemoryValidation.js'
 
 const MAX_REQUEST_BODY_BYTES = 1024 * 1024
+const DEFAULT_DIST_DIRECTORY = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  '..',
+  'dist',
+)
+const CONTENT_TYPES = {
+  '.css': 'text/css; charset=utf-8',
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.png': 'image/png',
+  '.svg': 'image/svg+xml',
+}
 
 export function sendJson(response, statusCode, body) {
   response.writeHead(statusCode, {
     'Content-Type': 'application/json; charset=utf-8',
   })
   response.end(`${JSON.stringify(body)}\n`)
+}
+
+function frontendFilePath(distDirectory, pathname) {
+  let decodedPathname
+  try {
+    decodedPathname = decodeURIComponent(pathname)
+  } catch {
+    return null
+  }
+
+  if (decodedPathname.includes('\0') || decodedPathname.includes('\\')) return null
+
+  const candidate = resolve(distDirectory, `.${decodedPathname}`)
+  if (candidate !== distDirectory && !candidate.startsWith(`${distDirectory}${sep}`)) {
+    return null
+  }
+
+  return candidate
+}
+
+async function serveFile(response, filePath) {
+  try {
+    const file = await stat(filePath)
+    if (!file.isFile()) return false
+
+    response.writeHead(200, {
+      'Content-Type': CONTENT_TYPES[extname(filePath).toLowerCase()]
+        ?? 'application/octet-stream',
+    })
+    response.end(await readFile(filePath))
+    return true
+  } catch (error) {
+    if (error.code === 'ENOENT' || error.code === 'ENOTDIR') return false
+    throw error
+  }
+}
+
+async function serveFrontend(response, distDirectory, pathname) {
+  const requestedFile = frontendFilePath(distDirectory, pathname)
+  if (!requestedFile) return false
+
+  if (await serveFile(response, requestedFile)) return true
+  return serveFile(response, resolve(distDirectory, 'index.html'))
 }
 
 async function readJsonBody(request, limit = MAX_REQUEST_BODY_BYTES) {
@@ -89,6 +148,7 @@ function sendProductionMemoryFailure(response, operation, error, logger) {
 }
 
 export function createScriptyRequestHandler({
+  distDirectory = DEFAULT_DIST_DIRECTORY,
   geminiPrepareAgent = null,
   logger = console,
   productionMemoryAgent = null,
@@ -96,6 +156,7 @@ export function createScriptyRequestHandler({
 } = {}) {
   return async function handleScriptyRequest(request, response) {
     const url = new URL(request.url ?? '/', 'http://localhost')
+    const rawPathname = (request.url ?? '/').split(/[?#]/, 1)[0]
 
     if (request.method === 'GET' && url.pathname === '/api/health') {
       sendJson(response, 200, { status: 'ok' })
@@ -211,6 +272,15 @@ export function createScriptyRequestHandler({
       return
     }
 
+    if (url.pathname === '/api' || url.pathname.startsWith('/api/')) {
+      sendJson(response, 404, { error: 'not_found' })
+      return
+    }
+
+    if (request.method === 'GET' && await serveFrontend(response, distDirectory, rawPathname)) {
+      return
+    }
+
     sendJson(response, 404, { error: 'not_found' })
   }
 }
@@ -218,11 +288,13 @@ export function createScriptyRequestHandler({
 export const handleScriptyRequest = createScriptyRequestHandler()
 
 export function createScriptyServer({
+  distDirectory,
   geminiPrepareAgent,
   productionMemoryAgent,
   productionMemoryStore,
 } = {}) {
   return createServer(createScriptyRequestHandler({
+    distDirectory,
     geminiPrepareAgent,
     productionMemoryAgent,
     productionMemoryStore,
