@@ -291,3 +291,12 @@ This project is licensed under the GNU Affero General Public License v3.0 (AGPL-
 ## Contributing
 
 External code contributions are not currently being accepted. See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Contact
+
+Created by Ashley Broussard.
+
+- GitHub: [AshB4](https://github.com/AshB4)
+- LinkedIn: [Ashley Broussard](https://www.linkedin.com/in/ashley-m-broussard-33a392253)
+- Email: [Fleurdeviefarmsllc@gmail.com](mailto:Fleurdeviefarmsllc@gmail.com)
+- Portfolio: [ashb4.github.io](https://ashb4.github.io/)

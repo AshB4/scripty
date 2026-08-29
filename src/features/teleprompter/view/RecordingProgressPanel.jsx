@@ -8,8 +8,15 @@ const statusLabels = {
   'redo': 'Redo',
 }
 
+const statusActions = [
+  { Icon: Circle, label: 'Not Recorded', status: 'not-recorded' },
+  { Icon: RotateCcw, label: 'Redo', status: 'redo' },
+  { Icon: Check, label: 'Good', status: 'good' },
+]
+
 const RecordingProgressSectionList = memo(function RecordingProgressSectionList({
   onSelectSection,
+  onSetStatus,
   sections,
   selectedSectionId,
 }) {
@@ -18,27 +25,55 @@ const RecordingProgressSectionList = memo(function RecordingProgressSectionList(
       {sections.map((section) => {
         const isSelected = selectedSectionId === section.id
         return (
-          <button
-            aria-pressed={isSelected}
+          <article
             className={`recording-progress__section ${
               isSelected ? 'recording-progress__section--selected' : ''
             } recording-progress__section--${section.status}`}
             key={section.id}
-            onClick={() => onSelectSection(section.id)}
-            type="button"
+            role="listitem"
           >
-            <span className="recording-progress__section-status">
-              {section.symbol}
-              <strong>{statusLabels[section.status]}</strong>
-            </span>
-            <span className="recording-progress__section-text">
-              <strong>{section.speakerLabel}</strong>
-              <small>{section.text}</small>
-            </span>
-            <span className="recording-progress__section-take">
-              Take {section.takeCount}
-            </span>
-          </button>
+            <button
+              aria-pressed={isSelected}
+              className="recording-progress__section-main"
+              onClick={() => onSelectSection(section.id)}
+              type="button"
+            >
+              <span className="recording-progress__section-status">
+                {section.symbol}
+                <strong>{statusLabels[section.status]}</strong>
+              </span>
+              <span className="recording-progress__section-text">
+                <strong>{section.speakerLabel}</strong>
+                <small>{section.text}</small>
+              </span>
+              <span className="recording-progress__section-take">
+                Take {section.takeCount}
+              </span>
+            </button>
+            <div
+              aria-label={`Set recording status for ${section.text}`}
+              className="recording-progress__section-status-actions"
+              role="group"
+            >
+              {statusActions.map(({ Icon, label, status }) => (
+                <button
+                  aria-label={`Set ${section.text} to ${label}`}
+                  aria-pressed={section.status === status}
+                  className={`recording-progress__status-pill recording-progress__status-pill--${status} ${
+                    section.status === status
+                      ? 'recording-progress__status-pill--active'
+                      : ''
+                  }`}
+                  key={status}
+                  onClick={() => onSetStatus(section.id, status)}
+                  type="button"
+                >
+                  <Icon aria-hidden="true" size={12} />
+                  <span>{label}</span>
+                </button>
+              ))}
+            </div>
+          </article>
         )
       })}
     </div>
@@ -149,6 +184,7 @@ export default function RecordingProgressPanel({
       </section>
       <RecordingProgressSectionList
         onSelectSection={onSelectSection}
+        onSetStatus={onSetStatus}
         sections={sections}
         selectedSectionId={selectedSectionId}
       />

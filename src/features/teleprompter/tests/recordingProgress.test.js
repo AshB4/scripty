@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
 import { afterEach, beforeEach, test } from 'node:test'
 import { SCROLL_MODES } from '../scrollMode.js'
 import {
@@ -8,6 +9,7 @@ import {
 } from '../recordingProgress/recordingProgressStorage.js'
 import {
   buildRecordingProgressSections,
+  getPickupSections,
   getRecordingProgressPercent,
   getRecordingResumeTarget,
   getTakeCompletionAction,
@@ -75,6 +77,45 @@ test('status updates keep their note and updated timestamp shape', () => {
   assert.equal(statusEntry.note, 'Stumbled near ending')
   assert.equal(statusEntry.status, 'good')
   assert.equal(typeof statusEntry.updatedAt, 'string')
+})
+
+test('card status transitions reuse the recording entry state for counts and pickups', () => {
+  const initial = { note: 'Keep this note', status: 'not-recorded', takeCount: 2, updatedAt: null }
+  const good = setRecordingProgressStatus(initial, 'good')
+  const redo = setRecordingProgressStatus(good, 'redo')
+  const notRecorded = setRecordingProgressStatus(redo, 'not-recorded')
+  const sections = buildRecordingProgressSections(
+    [
+      { id: 'first', speakerLabel: 'Narrator', text: 'First section' },
+      { id: 'second', speakerLabel: 'Narrator', text: 'Second section' },
+    ],
+    {
+      first: redo,
+      second: good,
+    },
+  )
+
+  assert.equal(good.status, 'good')
+  assert.equal(redo.status, 'redo')
+  assert.equal(notRecorded.status, 'not-recorded')
+  assert.equal(notRecorded.note, 'Keep this note')
+  assert.equal(notRecorded.takeCount, 2)
+  assert.equal(getRecordingProgressPercent(sections), 50)
+  assert.deepEqual(getPickupSections(sections).map((section) => section.id), ['first'])
+})
+
+test('recording section cards expose all status pills through the shared status handler', async () => {
+  const panel = await readFile(
+    new URL('../view/RecordingProgressPanel.jsx', import.meta.url),
+    'utf8',
+  )
+
+  for (const status of ['not-recorded', 'redo', 'good']) {
+    assert.match(panel, new RegExp(`status: '${status}'`))
+  }
+  assert.match(panel, /onSetStatus\(section\.id, status\)/)
+  assert.match(panel, /aria-pressed=\{section\.status === status\}/)
+  assert.doesNotMatch(panel, /useState\(/)
 })
 
 test('recording progress survives refresh for the same script', () => {
@@ -231,4 +272,3 @@ test('countdown completion does not double-start Voice Follow', () => {
     'voice-follow',
   )
 })
-
