@@ -4,7 +4,7 @@ Scripty turns a creator's script into an executable recording-production workflo
 
 **Live Demo:** Pending
 
-**Demo Video:** Pending
+**Demo Video:** Pendinga 
 
 **Hackathon / ClickHouse Track:** Built for the Google Cloud Agentic Cinema Hackathon and entered in the ClickHouse track.
 
@@ -227,15 +227,34 @@ Vite proxies `/api` requests to `http://localhost:8787` by default. With all thr
 ## Demo Workflow
 
 1. Paste or import a script with spoken lines and production instructions such as B-Roll, an image, or a screen recording.
+
 2. Select **Prepare for Recording**.
+
+   ![Prepare for Recording](src/assets/prep4record.png)
+
 3. Open **Review Preparation** and inspect Confirmed, Tentative, and Needs input items.
-4. Confirm, change, or ignore uncertain classifications, then finalize.
-5. Start recording in the teleprompter. Use Timed Scroll or Voice Follow where supported.
-6. Record sections, mark takes **Good** or **Redo**, add a note when useful, and use Pickup Mode for Redo work.
-7. Open **Shoot Checklist** and complete the generated production requirements.
+
+   ![Prepare Review](src/assets/reviewPrep.png)
+
+4. Confirm, change, or ignore uncertain classifications, then select **Finalize & Start Recording** at the bottom of the screen.
+
+5. Scripty opens the teleprompter. Start recording, then use Timed Scroll or Voice Follow where supported.
+
+   ![Teleprompter and Recording Progress](src/assets/prompter.png)
+
+6. Record sections, mark takes **Good** or **Redo**, add notes when useful, and use Pickup Mode for Redo work.
+
+7. When finished in the teleprompter, use **Back to Script**, then open **Shoot Checklist** to review generated production requirements.
+
+   ![Shoot Checklist entry point](src/assets/shootcheckbutton.png)
+
 8. In **Production Assistant**, ask **What do I still need to finish?**
+
+   ![Production Assistant](src/assets/shootchecklist.png)
+
 9. Change a recording or asset state, allow the Production Memory sync to complete, and ask again to see a newly grounded answer.
-10. When all current work is complete, ask **What do I still need to finish?** to see the Production Completion Summary.
+
+10. When all current work is complete, ask **What do I still need to finish?** again to see the Production Completion Summary.
 
 ## Testing
 
