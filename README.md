@@ -2,7 +2,8 @@
 
 Scripty turns a creator's script into an executable recording-production workflow: prepare the script, perform it, track the work, and ask what remains.
 
-**Live Demo:** Pending
+**Live Demo:** 
+https://scripty-1017711214910.us-central1.run.app
 
 **Demo Video:** Pendinga 
 
